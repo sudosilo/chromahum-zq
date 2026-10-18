@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ChromaHum</title>
+<meta name="theme-color" content="#f4f8ff">
+<style>
+:root{--bg:#f4f8ff;--card:#ffffff;--ink:#14213d;--muted:#5a6785;--blue:#1e6bff;--blue2:#7fb0ff;--line:#d6e2fb}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{position:sticky;top:0;z-index:5;background:var(--bg);display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line)}
+h1{font-size:20px;margin:0;letter-spacing:.5px}
+h1 span{color:var(--blue)}
+#swatch{width:30px;height:30px;border-radius:8px;border:2px solid var(--blue2);background:#fff}
+.modes{display:flex;gap:6px;padding:10px 16px}
+.modes button{flex:1;padding:10px;border:1px solid var(--line);background:var(--card);border-radius:10px;font-weight:600;color:var(--ink);font-size:15px}
+.modes button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+.stage{position:relative;margin:0 16px;border-radius:14px;overflow:hidden;background:#dfe8fa;aspect-ratio:4/3;border:2px solid var(--blue2)}
+#v{position:absolute;width:2px;height:2px;opacity:0;pointer-events:none}
+#screen{position:absolute;inset:0;width:100%;height:100%;display:block}
+.start{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:rgba(244,248,255,.94);z-index:3}
+.start button{padding:16px 28px;font-size:18px;border:none;border-radius:14px;background:var(--blue);color:#fff;font-weight:700}
+.start p{margin:0;color:var(--muted);padding:0 24px;text-align:center;font-size:14px}
+.bands{display:flex;gap:4px;margin:12px 16px;height:60px;align-items:flex-end}
+.bands div{flex:1;border-radius:6px 6px 2px 2px;background:var(--blue2);min-height:3px}
+.panel{margin:0 16px 20px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+.row{display:flex;align-items:center;gap:12px;margin:10px 0}
+.row label{width:100px;color:var(--muted);font-size:14px}
+.row input[type=range]{flex:1;accent-color:var(--blue)}
+.row select{flex:1;padding:8px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--ink);font-size:15px}
+.toggle{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.toggle button{padding:9px 14px;border-radius:999px;border:1px solid var(--line);background:#fff;color:var(--ink);font-size:14px}
+.toggle button.on{background:#e6efff;border-color:var(--blue);color:var(--blue);font-weight:600}
+.hint{font-size:13px;color:var(--muted);margin:12px 0 0;line-height:1.4}
+footer{text-align:center;font-size:12px;color:var(--muted);padding:0 16px 28px}
+footer span{color:var(--blue)}
+</style>
+</head>
+<body>
+<header><h1>Chroma<span>Hum</span></h1><div id="swatch"></div></header>
+<div class="modes">
+<button data-m="sweep" class="on">Sweep</button>
+<button data-m="chord">Chord</button>
+<button data-m="motion">Motion</button>
+</div>
+<div class="stage">
+<video id="v" playsinline muted autoplay></video>
+<canvas id="screen"></canvas>
+<div class="start" id="start"><button id="go">Start camera and sound</button><p>Point the back camera at anything. Bright and colorful things sing louder.</p></div>
+</div>
+<div class="bands" id="bands"></div>
+<div class="panel">
+<div class="row"><label>Volume</label><input type="range" id="vol" min="0" max="1" step="0.01" value="0.5"></div>
+<div class="row"><label>Sweep speed</label><input type="range" id="spd" min="5" max="400" step="1" value="60"></div>
+<div class="row"><label>Scale</label><select id="scale"><option value="penta">Pentatonic</option><option value="major">Major</option><option value="chrom">Chromatic</option><option value="fifths">Fifths drone</option></select></div>
+<div class="row"><label>Root pitch</label><input type="range" id="root" min="40" max="220" step="1" value="110"></div>
+<div class="row"><label>Wave</label><select id="wave"><option value="sawtooth">Saw</option><option value="square">Square</option><option value="triangle">Triangle</option><option value="sine">Sine</option></select></div>
+<div class="toggle"><button id="inv">Dark is loud</button><button id="flip">Flip camera</button><button id="hold">Freeze</button></div>
+<p class="hint" id="hint"></p>
+</div>
+<footer>ChromaHum <span>v1</span></footer>
+<script>
+const BANDS=12,W=96,H=72;
+const v=document.getElementById('v');
+const scr=document.getElementById('screen');
+const sctx=scr.getContext('2d');
+const an=document.createElement('canvas');an.width=W;an.height=H;
+const actx=an.getContext('2d',{willReadFrequently:true});
+const $=id=>document.getElementById(id);
+const vol=$('vol'),spd=$('spd'),scaleSel=$('scale'),rootEl=$('root'),waveSel=$('wave');
+let mode='sweep',ac=null,master=null,voices=[],invert=false,facing='environment',frozen=false,stream=null;
+let prevLum=new Array(BANDS).fill(-1),sweepX=0,last=0,levels=new Array(BANDS).fill(0);
+const hints={
+sweep:'A blue line scans left to right like a barcode reader. Each column plays as it passes. Top of the frame is high pitch, bottom is low. Bright spots ring out, so black and white stripes turn into rhythm.',
+chord:'The whole frame plays at once as a held chord. Each row of the picture is one note. Color sets the tone, brightness sets the volume.',
+motion:'Only change makes sound. A spinning fan, a flickering light, or a waving hand pulses the notes on and off.'
+};
+const scales={penta:[0,3,5,7,10],major:[0,2,4,5,7,9,11],chrom:[0,1,2,3,4,5,6,7,8,9,10,11],fifths:[0,7]};
+const barsEl=$('bands');const bars=[];
+for(let i=0;i<BANDS;i++){const d=document.createElement('div');barsEl.appendChild(d);bars.push(d)}
+$('hint').textContent=hints.sweep;
+document.querySelectorAll('.modes button').forEach(b=>b.onclick=()=>{
+document.querySelectorAll('.modes button').forEach(x=>x.classList.remove('on'));
+b.classList.add('on');mode=b.dataset.m;$('hint').textContent=hints[mode];prevLum.fill(-1);
+});
+function freqFor(i){
+const s=scales[scaleSel.value];const idx=BANDS-1-i;
+const semi=s[idx%s.length]+12*Math.floor(idx/s.length);
+return Math.min(4200,(+rootEl.value)*Math.pow(2,semi/12));
+}
+function retune(){if(!ac)return;voices.forEach((vc,i)=>vc.osc.frequency.setTargetAtTime(freqFor(i),ac.currentTime,0.05))}
+scaleSel.onchange=retune;rootEl.oninput=retune;
+waveSel.onchange=()=>voices.forEach(vc=>vc.osc.type=waveSel.value);
+vol.oninput=()=>{if(master)master.gain.setTargetAtTime(+vol.value,ac.currentTime,0.05)};
+$('inv').onclick=e=>{invert=!invert;e.target.classList.toggle('on',invert)};
+$('hold').onclick=e=>{frozen=!frozen;e.target.classList.toggle('on',frozen);frozen?v.pause():v.play()};
+$('flip').onclick=async()=>{facing=facing==='environment'?'user':'environment';await startCam()};
+async function startCam(){
+if(stream)stream.getTracks().forEach(t=>t.stop());
+stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:facing},width:{ideal:640},height:{ideal:480}}});
+v.srcObject=stream;await v.play();frozen=false;$('hold').classList.remove('on');
+}
+function startAudio(){
+ac=new (window.AudioContext||window.webkitAudioContext)();
+const comp=ac.createDynamicsCompressor();comp.threshold.value=-18;comp.ratio.value=6;
+master=ac.createGain();master.gain.value=+vol.value;
+master.connect(comp);comp.connect(ac.destination);
+for(let i=0;i<BANDS;i++){
+const osc=ac.createOscillator();osc.type=waveSel.value;osc.frequency.value=freqFor(i);
+const filt=ac.createBiquadFilter();filt.type='lowpass';filt.frequency.value=1200;filt.Q.value=2;
+const g=ac.createGain();g.gain.value=0;
+osc.connect(filt);filt.connect(g);g.connect(master);osc.start();
+voices.push({osc,filt,g});
+}
+}
+$('go').onclick=async()=>{
+try{startAudio();await startCam();$('start').style.display='none';requestAnimationFrame(loop)}
+catch(err){$('start').querySelector('p').textContent='Camera blocked. Allow camera access for this site in the browser, then tap start again.';if(ac){ac.close();ac=null;voices=[]}}
+};
+function crop(){
+const vw=v.videoWidth,vh=v.videoHeight;const target=4/3;
+if(vw/vh>target){const sw=vh*target;return[(vw-sw)/2,0,sw,vh]}
+const sh=vw/target;return[0,(vh-sh)/2,vw,sh];
+}
+function hsv(r,g,b){
+r/=255;g/=255;b/=255;const mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn;let h=0;
+if(d){if(mx===r)h=((g-b)/d)%6;else if(mx===g)h=(b-r)/d+2;else h=(r-g)/d+4;h*=60;if(h<0)h+=360}
+return[h,mx?d/mx:0,mx];
+}
+function loop(t){
+requestAnimationFrame(loop);
+if(!ac||v.readyState<2||!v.videoWidth)return;
+const dt=last?Math.min(0.1,(t-last)/1000):0;last=t;
+const dpr=window.devicePixelRatio||1;
+const cw=Math.round(scr.clientWidth*dpr),ch=Math.round(scr.clientHeight*dpr);
+if(scr.width!==cw||scr.height!==ch){scr.width=cw;scr.height=ch}
+const [sx,sy,sw,sh]=crop();
+const mirror=facing==='user';
+sctx.save();if(mirror){sctx.translate(cw,0);sctx.scale(-1,1)}
+sctx.drawImage(v,sx,sy,sw,sh,0,0,cw,ch);sctx.restore();
+actx.save();if(mirror){actx.translate(W,0);actx.scale(-1,1)}
+actx.drawImage(v,sx,sy,sw,sh,0,0,W,H);actx.restore();
+const d=actx.getImageData(0,0,W,H).data;
+let x0=0,x1=W,step=2;
+if(mode==='sweep'){sweepX=(sweepX+(+spd.value)*dt)%W;x0=Math.floor(sweepX);x1=Math.min(W,x0+2);step=1}
+const now=ac.currentTime;
+const tc=mode==='sweep'?0.008:mode==='motion'?0.02:0.06;
+let cr=0,cg=0,cb=0,cn=0;
+for(let i=0;i<BANDS;i++){
+const y0=Math.floor(i*H/BANDS),y1=Math.floor((i+1)*H/BANDS);
+let r=0,g=0,b=0,n=0;
+for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x+=step){const k=(y*W+x)*4;r+=d[k];g+=d[k+1];b+=d[k+2];n++}
+r/=n;g/=n;b/=n;cr+=r;cg+=g;cb+=b;cn++;
+const [h,s,val]=hsv(r,g,b);
+const lum=(0.299*r+0.587*g+0.114*b)/255;
+let level;
+if(mode==='motion'){
+level=prevLum[i]<0?0:Math.min(1,Math.abs(lum-prevLum[i])*14);
+prevLum[i]=lum;
+}else{
+const l=invert?1-val:val;
+level=mode==='sweep'?Math.pow(l,2.2):Math.pow(l,1.6)*(0.45+0.55*s);
+}
+levels[i]=level;
+const vc=voices[i];
+vc.g.gain.setTargetAtTime(level*(mode==='chord'?0.12:0.22),now,tc);
+const cut=s>0.15?400+(h/360)*5200+s*1800:700+val*2600;
+vc.filt.frequency.setTargetAtTime(cut,now,0.04);
+vc.osc.detune.setTargetAtTime(s*14*(i%2?1:-1),now,0.1);
+bars[i].style.height=(4+level*56)+'px';
+bars[i].style.background=`rgb(${r|0},${g|0},${b|0})`;
+bars[i].style.boxShadow=level>0.05?'inset 0 -3px 0 #1e6bff':'none';
+}
+$('swatch').style.background=`rgb(${(cr/cn)|0},${(cg/cn)|0},${(cb/cn)|0})`;
+sctx.save();
+if(mode==='sweep'){
+const lx=(sweepX/W)*cw;
+sctx.fillStyle='rgba(30,107,255,0.18)';sctx.fillRect(lx-10*dpr,0,20*dpr,ch);
+sctx.fillStyle='#1e6bff';sctx.fillRect(lx-1.5*dpr,0,3*dpr,ch);
+}
+for(let i=0;i<BANDS;i++){
+const y=i*ch/BANDS;
+if(mode!=='sweep'&&levels[i]>0.03){sctx.fillStyle=`rgba(30,107,255,${Math.min(0.35,levels[i]*0.4)})`;sctx.fillRect(0,y,cw,ch/BANDS)}
+sctx.fillStyle='#ffffff';sctx.fillRect(cw-8*dpr,y,8*dpr,1*dpr);
+sctx.fillStyle='#1e6bff';sctx.fillRect(cw-8*dpr,y+ch/BANDS/2-2*dpr,8*dpr*Math.max(0.15,levels[i]),4*dpr);
+}
+sctx.restore();
+}
+document.addEventListener('visibilitychange',()=>{if(!ac)return;document.hidden?ac.suspend():ac.resume()});
+</script>
+</body>
+</html>
