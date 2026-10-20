@@ -62,18 +62,25 @@ body.src-tiles .row.only-tl{display:flex}
 .colors button.on{border-color:var(--blue);box-shadow:0 0 0 3px #cfe0ff}
 .colors input{width:44px;height:36px;border:1px solid var(--line);border-radius:8px;background:#fff;padding:2px}
 #file{display:none}
+.only-mv,.only-cv{display:none}
+body[data-mode=motion]:not(.src-camera) .row.only-mv{display:flex}
+body.src-canvas .panel.only-cv{display:block}
+#screen.draw{pointer-events:auto;touch-action:none;cursor:crosshair}
+.seg.src{flex-wrap:wrap}
+.seg.src button{min-width:62px;padding:8px 4px}
 .hint{font-size:13px;color:var(--muted);margin:12px 0 0;line-height:1.4}
 footer{text-align:center;font-size:12px;color:var(--muted);padding:0 16px 28px}
 footer span{color:var(--blue)}
 </style>
 </head>
-<body class="src-camera">
+<body class="src-camera" data-mode="sweep">
 <header><h1>Chroma<span>Hum</span></h1><div id="swatch"></div></header>
 <div class="seg src" id="srcRow">
 <button data-s="camera" class="on">Camera</button>
 <button data-s="patterns">Patterns</button>
 <button data-s="tiles">Tiles</button>
 <button data-s="mytile">My Tile</button>
+<button data-s="canvas">Infinite</button>
 </div>
 <div class="seg modes" id="modeRow">
 <button data-m="sweep" class="on">Sweep</button>
@@ -84,7 +91,7 @@ footer span{color:var(--blue)}
 <video id="v" playsinline muted autoplay></video>
 <iframe id="tiles" title="Tiles" src="chromahum-v2-tiles.html"></iframe>
 <canvas id="screen"></canvas>
-<div class="start" id="start"><button id="go">Start sound</button><p id="startMsg">Camera points at anything, Patterns plays built in pictures, Tiles turns the tile spinner board into a song.</p></div>
+<div class="start" id="start"><button id="go">Start sound</button><p id="startMsg">Camera points at anything, Patterns plays built in pictures, Tiles turns the tile spinner board into a song, My Tile plays a tile you draw, and Infinite is a canvas you can zoom into forever.</p></div>
 </div>
 <div class="bands" id="bands"></div>
 <div class="panel only-my" id="editor">
@@ -103,7 +110,17 @@ footer span{color:var(--blue)}
 <div class="row"><label>Start from</label><select id="starter"><option value="">Pick a starter</option><option value="blank">Blank</option><option value="arcs">Quarter arcs</option><option value="diag">Diagonal split</option><option value="cross">Cross</option><option value="ring">Ring</option><option value="tri">Triangle</option><option value="bars">Bars</option><option value="dot">Corner dot</option></select></div>
 <div class="toggle"><button id="solid">Solid shapes</button><button id="undo">Undo</button><button id="clearPad">Clear</button></div>
 </div>
+<div class="panel only-cv" id="cvPanel">
+<p class="edtitle">Infinite <span>canvas</span></p>
+<div class="toggle"><button id="cvDraw" class="on">Draw</button><button id="cvPan">Pan</button><button id="cvUndo">Undo</button><button id="cvClear">Clear</button><button id="cvHome">Home view</button></div>
+<div class="colors" id="cvColors"><input type="color" id="cvCol" value="#1e6bff" aria-label="Custom color"></div>
+<div class="row"><label>Brush</label><input type="range" id="cvBrush" min="1" max="40" step="1" value="6"></div>
+<p class="hint">Draw right on the stage above. Two fingers pinch to zoom and drag to pan, so you can zoom way in and draw inside your own drawing. Pan switches one finger from drawing to moving around. Under Motion, Infinite zoom dives into the art forever.</p>
+</div>
 <div class="panel">
+<div class="row only-mv"><label>Movement</label><select id="mv"><option value="still">Still</option><option value="circle">Circle</option><option value="wiggle">Wiggle</option><option value="spin">Spin</option><option value="dvd">DVD bounce</option><option value="pulse">Pulse</option><option value="drift">Drift</option><option value="infinite">Infinite zoom</option></select></div>
+<div class="row only-mv"><label>Move speed</label><input type="range" id="mvSpd" min="0.1" max="3" step="0.05" value="1"></div>
+<div class="row only-mv"><label>Move size</label><input type="range" id="mvAmt" min="0" max="1" step="0.01" value="0.5"></div>
 <div class="row only-pat"><label>Picture</label><select id="pat"></select></div>
 <div class="row only-grid"><label>Tiles across</label><input type="range" id="across" min="2" max="16" step="1" value="6"><output id="acrossVal">6</output></div>
 <div class="row only-my"><label>Arrangement</label><select id="arr"><option value="same">Same way</option><option value="random">Random turns</option><option value="pinwheel">Pinwheel</option><option value="stairs">Stairs</option><option value="mirror">Mirror</option><option value="kaleido">Kaleidoscope</option><option value="negative">Checker negative</option><option value="brick">Brick offset</option><option value="spinrows">Turning rows</option><option value="scatter">Scatter flips</option></select></div>
@@ -129,7 +146,7 @@ footer span{color:var(--blue)}
 </div>
 <p class="hint" id="hint"></p>
 </div>
-<footer>ChromaHum <span>v4</span></footer>
+<footer>ChromaHum <span>v5</span></footer>
 <script>
 const BANDS=12,W=96,H=72,PW=640,PH=480;
 const v=document.getElementById('v');
@@ -140,14 +157,17 @@ const actx=an.getContext('2d',{willReadFrequently:true});
 const $=id=>document.getElementById(id);
 const vol=$('vol'),spd=$('spd'),scaleSel=$('scale'),rootEl=$('root'),waveSel=$('wave'),patSel=$('pat'),stage=$('stage'),tf=$('tiles');
 let mode='sweep',source='camera',ac=null,master=null,voices=[],invert=false,facing='environment',frozen=false,stream=null,started=false,spinOn=false,spinA=0;
+let pxPrev=new Float32Array(W*H),pxValid=false;
+function resetMotion(){pxValid=false}
 let prevLum=new Array(BANDS).fill(-1),sweepX=0,last=0,levels=new Array(BANDS).fill(0);
 const hints={
 sweep:'A blue line scans left to right like a barcode reader. Each column plays as it passes. Top of the frame is high pitch, bottom is low. Bright spots ring out, so black and white stripes turn into rhythm.',
 chord:'The whole frame plays at once as a held chord. Each row of the picture is one note. Color sets the tone, brightness sets the volume.',
-motion:'Only change makes sound. A spinning fan, a flickering light, or a waving hand pulses the notes on and off.'
+motion:'Only change makes sound. A spinning fan, a flickering light, or a waving hand pulses the notes on and off. On Patterns, Tiles, My Tile and Infinite, Movement makes the art move by itself with Circle, Wiggle, Spin, DVD bounce, Pulse, Drift or Infinite zoom, and the sound follows it. Movement on the left or right pans the sound left or right.'
 };
 const srcHints={
 camera:'',
+canvas:' Infinite is a canvas with no edges. Draw on the stage, pinch to zoom in, and draw smaller things inside bigger things. Infinite zoom under Motion loops the dive forever.',
 patterns:' Patterns are built in high contrast pictures that each play their own tune. Load picture takes any image or SVG from the phone. Spin turns the picture slowly so Chord and Motion keep moving.',
 mytile:' Draw one square tile in the editor and it repeats across the stage. Your ink and color are the notes and the white is silence, and Dark is loud flips that. Tap any tile on the stage to turn it. Tiles across sets how many play through, Arrangement picks how the copies turn and flip, and Shuffle scrambles them.',
 tiles:' Tap tiles to rotate them and the song rewrites itself. On the board the curves are the notes, and Dark is loud flips it so the bare tile rings instead. Zoom closes in on a section and only that section plays. Move view lets you drag to pan and pinch to zoom, then switch it off to go back to turning tiles. Colors repaint the lines, tiles, edges and background. The menu at the top left of the board switches tile traditions.'
@@ -159,7 +179,7 @@ function setHint(){$('hint').textContent=hints[mode]+srcHints[source]+' Slide Sw
 setHint();
 document.querySelectorAll('#modeRow button').forEach(b=>b.onclick=()=>{
 document.querySelectorAll('#modeRow button').forEach(x=>x.classList.remove('on'));
-b.classList.add('on');mode=b.dataset.m;setHint();prevLum.fill(-1);
+b.classList.add('on');mode=b.dataset.m;document.body.dataset.mode=mode;setHint();resetMotion();
 });
 document.querySelectorAll('#srcRow button').forEach(b=>b.onclick=()=>setSource(b.dataset.s));
 
@@ -186,8 +206,9 @@ for(let i=0;i<BANDS;i++){
 const osc=ac.createOscillator();osc.type=waveSel.value;osc.frequency.value=freqFor(i);
 const filt=ac.createBiquadFilter();filt.type='lowpass';filt.frequency.value=1200;filt.Q.value=2;
 const g=ac.createGain();g.gain.value=0;
-osc.connect(filt);filt.connect(g);g.connect(master);osc.start();
-voices.push({osc,filt,g});
+let pan=null;if(ac.createStereoPanner){pan=ac.createStereoPanner();g.connect(pan);pan.connect(master)}else g.connect(master);
+osc.connect(filt);filt.connect(g);osc.start();
+voices.push({osc,filt,g,pan});
 }
 }
 /* ---------- camera ---------- */
@@ -268,7 +289,7 @@ function drawPattern(){
 pb.setTransform(1,0,0,1,0,0);pb.fillStyle='#ffffff';pb.fillRect(0,0,PW,PH);
 if(patSel.value==='upload'&&uploaded){const s=Math.min(PW/uploaded.width,PH/uploaded.height);const w=uploaded.width*s,h=uploaded.height*s;pb.drawImage(uploaded,(PW-w)/2,(PH-h)/2,w,h)}
 else (PATTERNS[patSel.value]||PATTERNS.stripes).draw(pb);
-prevLum.fill(-1);
+resetMotion();
 }
 patSel.onchange=drawPattern;
 $('upload').onclick=()=>$('file').click();
@@ -278,11 +299,103 @@ img.onload=()=>{uploaded=img;fillPatSelect();patSel.value='upload';drawPattern()
 img.src=URL.createObjectURL(f);
 };
 fillPatSelect();drawPattern();
-function composePattern(dt){
-if(!spinOn){pf.drawImage(patBase,0,0);return}
-spinA+=dt*0.35;pf.fillStyle='#ffffff';pf.fillRect(0,0,PW,PH);
-pf.save();pf.translate(PW/2,PH/2);pf.rotate(spinA);pf.scale(1.35,1.35);pf.drawImage(patBase,-PW/2,-PH/2);pf.restore();
+/* ---------- movement engine ---------- */
+const mvSel=$('mv'),mvSpd=$('mvSpd'),mvAmt=$('mvAmt');
+let moveT=0,dvd={x:0.2,y:0.3,vx:0.23,vy:0.17};const INF_K=3;
+function moving(){return mvSel.value!=='still'}
+function infScale(){return Math.pow(INF_K,(moveT*0.25)%1)}
+function tiledDraw(c,src,tx,ty,rot,sc){
+if(!tx&&!ty&&!rot&&sc===1){c.drawImage(src,0,0,PW,PH);return}
+const ox=((tx%PW)+PW)%PW,oy=((ty%PH)+PH)%PH;
+c.save();c.translate(PW/2,PH/2);c.rotate(rot);c.scale(sc,sc);
+for(let i=-2;i<=1;i++)for(let j=-2;j<=1;j++)c.drawImage(src,-PW/2+ox+i*PW,-PH/2+oy+j*PH,PW+0.5,PH+0.5);
+c.restore();
 }
+function composeMove(src,c,dt,bg,vectorInf){
+if(spinOn)spinA+=dt*0.35;
+moveT+=dt*(+mvSpd.value);
+const a=+mvAmt.value,t=moveT,m=mode==='motion'?mvSel.value:'still',sp=(source==='patterns'||source==='mytile')&&spinOn?spinA:0;
+c.setTransform(1,0,0,1,0,0);c.fillStyle=bg;c.fillRect(0,0,PW,PH);
+if(m==='dvd'){
+const sz=0.22+0.45*a;dvd.x+=dvd.vx*dt*(+mvSpd.value);dvd.y+=dvd.vy*dt*(+mvSpd.value);
+if(dvd.x<0){dvd.x=0;dvd.vx=Math.abs(dvd.vx)}if(dvd.x>1-sz){dvd.x=1-sz;dvd.vx=-Math.abs(dvd.vx)}
+if(dvd.y<0){dvd.y=0;dvd.vy=Math.abs(dvd.vy)}if(dvd.y>1-sz){dvd.y=1-sz;dvd.vy=-Math.abs(dvd.vy)}
+c.save();c.translate((dvd.x+sz/2)*PW,(dvd.y+sz/2)*PH);c.rotate(sp);c.drawImage(src,-sz*PW/2,-sz*PH/2,sz*PW,sz*PH);c.restore();
+c.strokeStyle='#1e6bff';c.lineWidth=3;c.strokeRect(dvd.x*PW,dvd.y*PH,sz*PW,sz*PH);return;
+}
+if(m==='infinite'){
+if(vectorInf){c.drawImage(src,0,0,PW,PH);return}
+const S=infScale();
+for(let n=3;n>=-5;n--){const k=S*Math.pow(INF_K,n);if(k*PW<2)break;c.save();c.translate(PW/2,PH/2);c.rotate(sp);c.drawImage(src,-PW*k/2,-PH*k/2,PW*k,PH*k);c.restore()}
+return;
+}
+let tx=0,ty=0,rot=sp,sc=1;
+if(m==='circle'){tx=Math.cos(t)*a*0.3*PW;ty=Math.sin(t)*a*0.3*PH}
+else if(m==='wiggle'){tx=Math.sin(t*5)*a*0.08*PW;rot+=Math.sin(t*3.3)*a*0.25}
+else if(m==='spin'){rot+=t*0.8*(0.3+a)}
+else if(m==='pulse'){sc=1+a*0.8*(0.5+0.5*Math.sin(t*2.2))}
+else if(m==='drift'){tx=t*a*160;ty=t*a*70}
+if(rot)sc=Math.max(sc,1.01);
+tiledDraw(c,src,tx,ty,rot,sc);
+}
+const tileBase=document.createElement('canvas');tileBase.width=PW;tileBase.height=PH;const tb=tileBase.getContext('2d');
+const tileFrame=document.createElement('canvas');tileFrame.width=PW;tileFrame.height=PH;const tfx=tileFrame.getContext('2d');
+
+/* ---------- infinite canvas ---------- */
+const cvBase=document.createElement('canvas');cvBase.width=PW;cvBase.height=PH;const cvx=cvBase.getContext('2d');
+const cvFrame=document.createElement('canvas');cvFrame.width=PW;cvFrame.height=PH;const cvf=cvFrame.getContext('2d');
+let strokes=[],cam={x:0,y:0,s:1},cvMode='draw',cvColor='#1e6bff',curStroke=null;
+const cvPtrs=new Map();let cvPinch=null;
+function cvScale(){return cam.s*(mode==='motion'&&mvSel.value==='infinite'?infScale():1)}
+function renderWorld(){
+cvx.setTransform(1,0,0,1,0,0);cvx.fillStyle='#ffffff';cvx.fillRect(0,0,PW,PH);
+const inf=mode==='motion'&&mvSel.value==='infinite',S=cvScale();
+const layers=inf?[-4,-3,-2,-1,0,1,2,3]:[0];
+cvx.lineCap='round';cvx.lineJoin='round';
+for(const n of layers){
+const k=S*Math.pow(INF_K,n);
+cvx.setTransform(k,0,0,k,PW/2-cam.x*k,PH/2-cam.y*k);
+for(const st of strokes){
+if(st.w*k<0.15)continue;
+cvx.strokeStyle=st.c;cvx.lineWidth=inf?Math.min(st.w,16/k):st.w;cvx.beginPath();
+const q=st.p;cvx.moveTo(q[0],q[1]);if(q.length===2)cvx.lineTo(q[0]+0.01/k,q[1]);for(let i=2;i<q.length;i+=2)cvx.lineTo(q[i],q[i+1]);cvx.stroke();
+}
+}
+cvx.setTransform(1,0,0,1,0,0);
+}
+function seedCanvas(){
+strokes=[];const spiral=[];for(let a=0;a<Math.PI*10;a+=0.08){const r=4+a*6;spiral.push(Math.cos(a)*r,Math.sin(a)*r)}
+strokes.push({c:'#1e6bff',w:8,p:spiral});
+for(let i=0;i<6;i++){const a=i/6*Math.PI*2,cx=Math.cos(a)*230,cy=Math.sin(a)*150,ring=[];for(let b=0;b<=Math.PI*2+0.1;b+=0.15)ring.push(cx+Math.cos(b)*34,cy+Math.sin(b)*34);strokes.push({c:i%2?'#e53935':'#111111',w:7,p:ring})}
+}
+function saveCanvas(){try{const j=JSON.stringify(strokes);if(j.length<900000)localStorage.setItem('chromahum-v5-canvas',j)}catch(e){}}
+(function loadCanvas(){let j=null;try{j=localStorage.getItem('chromahum-v5-canvas')}catch(e){}if(j){try{strokes=JSON.parse(j)}catch(e){seedCanvas()}}else seedCanvas()})();
+function toFrame(e){const r=scr.getBoundingClientRect();return[(e.clientX-r.left)/r.width*PW,(e.clientY-r.top)/r.height*PH]}
+function toWorld(fx,fy){const S=cvScale();return[(fx-PW/2)/S+cam.x,(fy-PH/2)/S+cam.y]}
+scr.addEventListener('pointerdown',e=>{
+if(source!=='canvas'||!started)return;scr.setPointerCapture(e.pointerId);
+const f=toFrame(e);cvPtrs.set(e.pointerId,f);
+if(cvPtrs.size===2){if(curStroke&&curStroke.p.length<=4)strokes.pop();curStroke=null;const[a,b]=[...cvPtrs.values()];cvPinch={d:Math.hypot(a[0]-b[0],a[1]-b[1]),m:[(a[0]+b[0])/2,(a[1]+b[1])/2],s:cam.s}}
+else if(cvMode==='draw'){const w=toWorld(f[0],f[1]);curStroke={c:cvColor,w:+$('cvBrush').value/cvScale(),p:[w[0],w[1]]};strokes.push(curStroke)}
+});
+scr.addEventListener('pointermove',e=>{
+if(source!=='canvas'||!cvPtrs.has(e.pointerId))return;
+const f=toFrame(e),prev=cvPtrs.get(e.pointerId);cvPtrs.set(e.pointerId,f);
+if(cvPtrs.size===2&&cvPinch){const[a,b]=[...cvPtrs.values()],m=[(a[0]+b[0])/2,(a[1]+b[1])/2],d=Math.hypot(a[0]-b[0],a[1]-b[1]);
+cam.s=Math.max(1e-4,Math.min(1e4,cvPinch.s*d/cvPinch.d));const S=cvScale();cam.x-=(m[0]-cvPinch.m[0])/S;cam.y-=(m[1]-cvPinch.m[1])/S;cvPinch.m=m;return}
+if(curStroke){const w=toWorld(f[0],f[1]);curStroke.p.push(w[0],w[1])}
+else if(cvMode==='pan'){const S=cvScale();cam.x-=(f[0]-prev[0])/S;cam.y-=(f[1]-prev[1])/S}
+});
+const cvEnd=e=>{if(!cvPtrs.has(e.pointerId))return;cvPtrs.delete(e.pointerId);if(cvPtrs.size<2)cvPinch=null;if(cvPtrs.size===0){if(curStroke)saveCanvas();curStroke=null}};
+scr.addEventListener('pointerup',cvEnd);scr.addEventListener('pointercancel',cvEnd);
+scr.addEventListener('wheel',e=>{if(source!=='canvas')return;e.preventDefault();cam.s=Math.max(1e-4,Math.min(1e4,cam.s*Math.exp(-e.deltaY*0.002)))},{passive:false});
+$('cvDraw').onclick=()=>{cvMode='draw';$('cvDraw').classList.add('on');$('cvPan').classList.remove('on')};
+$('cvPan').onclick=()=>{cvMode='pan';$('cvPan').classList.add('on');$('cvDraw').classList.remove('on')};
+$('cvUndo').onclick=()=>{strokes.pop();saveCanvas()};
+$('cvClear').onclick=()=>{strokes=[];saveCanvas()};
+$('cvHome').onclick=()=>{cam={x:0,y:0,s:1}};
+function cvPick(c){cvColor=c;$('cvCol').value=c;document.querySelectorAll('#cvColors button').forEach(b=>b.classList.toggle('on',b.dataset.c===c))}
+$('cvCol').oninput=e=>cvPick(e.target.value);
 
 /* ---------- tiles ---------- */
 const TILE_CSS=`.tile-base{fill:var(--stone);stroke:var(--grout);stroke-width:.8}
@@ -318,7 +431,7 @@ st.textContent='svg{'+vars+'}'+TILE_CSS;
 clone.insertBefore(st,clone.firstChild);
 const str=new XMLSerializer().serializeToString(clone);
 const img=new Image();
-img.onload=()=>{tileImg=img;tileRect={x:r.left,y:r.top,w:r.width,h:r.height}};
+img.onload=()=>{tileImg=img;tileRect={x:r.left,y:r.top,w:r.width,h:r.height};tb.fillStyle=tileBg;tb.fillRect(0,0,PW,PH);tb.drawImage(img,0,0,PW,PH)};
 img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(str);
 }
 function queueTiles(){clearTimeout(tileTimer);tileTimer=setTimeout(rasterTiles,60)}
@@ -342,6 +455,7 @@ function pickColor(c){color=c;$('col').value=c;document.querySelectorAll('#color
 function hexToRgb(h){const n=parseInt(h.slice(1),16);return`rgb(${n>>16}, ${(n>>8)&255}, ${n&255})`}
 $('col').oninput=e=>pickColor(e.target.value);
 pickColor('#1e6bff');
+SW.forEach(c=>{const b=document.createElement('button');b.style.background=c;b.dataset.c=c;b.onclick=()=>cvPick(c);$('cvColors').insertBefore(b,$('cvCol'))});cvPick('#1e6bff');
 document.querySelectorAll('#tools button').forEach(b=>b.onclick=()=>{tool=b.dataset.t;document.querySelectorAll('#tools button').forEach(x=>x.classList.toggle('on',x===b))});
 $('solid').onclick=e=>{solid=!solid;e.target.classList.toggle('on',solid)};
 function pushUndo(){undoStack.push(px.getImageData(0,0,PS,PS));if(undoStack.length>25)undoStack.shift()}
@@ -420,7 +534,7 @@ const rot=((s.rot||0)+(taps[c+','+r]||0))%4;
 pb.save();pb.translate(x+cell/2,r*cell+cell/2);pb.rotate(rot*Math.PI/2);pb.scale(s.fx?-1:1,s.fy?-1:1);
 pb.drawImage(s.neg?padNeg:pad,-cell/2-0.5,-cell/2-0.5,cell+1,cell+1);pb.restore();
 }
-prevLum.fill(-1);
+resetMotion();
 }
 $('arr').onchange=()=>{taps={};drawMyTiles()};
 $('shuf').onclick=()=>{shufSeed=Math.floor(Math.random()*1e6);taps={};const N=across.mytile,rows=Math.ceil(PH/(PW/N));const R=rng(shufSeed);for(let r=0;r<rows;r++)for(let c=-1;c<=N;c++)taps[c+','+r]=Math.floor(R()*4);drawMyTiles()};
@@ -466,9 +580,9 @@ $('zoom').oninput=e=>{vs.z=+e.target.value;queueView()};
 $('resetView').onclick=()=>{vs={z:1,cx:0.5,cy:0.5,fw:1,fh:1};queueView()};
 $('moveView').onclick=e=>{moveOn=!moveOn;e.target.classList.toggle('on',moveOn);scr.classList.toggle('grab',moveOn&&source==='tiles')};
 const ptrs=new Map();let pinch0=0,z0=1;
-scr.addEventListener('pointerdown',e=>{if(!moveOn)return;scr.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});if(ptrs.size===2){const[a,b]=[...ptrs.values()];pinch0=Math.hypot(a.x-b.x,a.y-b.y);z0=vs.z}});
+scr.addEventListener('pointerdown',e=>{if(!moveOn||source!=='tiles')return;scr.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});if(ptrs.size===2){const[a,b]=[...ptrs.values()];pinch0=Math.hypot(a.x-b.x,a.y-b.y);z0=vs.z}});
 scr.addEventListener('pointermove',e=>{
-if(!moveOn||!ptrs.has(e.pointerId))return;const p=ptrs.get(e.pointerId),dx=e.clientX-p.x,dy=e.clientY-p.y;
+if(!moveOn||source!=='tiles'||!ptrs.has(e.pointerId))return;const p=ptrs.get(e.pointerId),dx=e.clientX-p.x,dy=e.clientY-p.y;
 ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
 if(ptrs.size===1&&tileRect){vs.cx-=dx/tileRect.w*vs.fw;vs.cy-=dy/tileRect.h*vs.fh}
 else if(ptrs.size===2&&pinch0){const[a,b]=[...ptrs.values()];vs.z=Math.max(1,Math.min(8,z0*Math.hypot(a.x-b.x,a.y-b.y)/pinch0))}
@@ -487,7 +601,8 @@ source=s;document.body.className='src-'+s;
 document.querySelectorAll('#srcRow button').forEach(b=>b.classList.toggle('on',b.dataset.s===s));
 stage.classList.toggle('tall',s==='tiles');
 scr.classList.toggle('grab',moveOn&&s==='tiles');
-prevLum.fill(-1);setHint();
+scr.classList.toggle('draw',s==='canvas');
+resetMotion();setHint();
 showAcross();
 if(s==='patterns')drawPattern();
 if(s==='mytile')drawMyTiles();
@@ -530,18 +645,29 @@ sctx.drawImage(v,sx,sy,sw,sh,0,0,cw,ch);sctx.restore();
 actx.save();if(mirror){actx.translate(W,0);actx.scale(-1,1)}
 actx.drawImage(v,sx,sy,sw,sh,0,0,W,H);actx.restore();
 }else if(source==='patterns'||source==='mytile'){
-composePattern(dt);
+if(mode==='motion'||spinOn)composeMove(patBase,pf,dt,'#ffffff',false);else pf.drawImage(patBase,0,0);
 sctx.drawImage(patFrame,0,0,cw,ch);
 actx.drawImage(patFrame,0,0,W,H);
+}else if(source==='canvas'){
+renderWorld();
+if(mode==='motion')composeMove(cvBase,cvf,dt,'#ffffff',true);else cvf.drawImage(cvBase,0,0);
+sctx.drawImage(cvFrame,0,0,cw,ch);
+actx.drawImage(cvFrame,0,0,W,H);
 }else{
 sctx.clearRect(0,0,cw,ch);
 if(!tileImg||!tileRect)return;
+ox=tileRect.x*dpr;oy=tileRect.y*dpr;ow=tileRect.w*dpr;oh=tileRect.h*dpr;
+if(mode==='motion'&&moving()){
+composeMove(tileBase,tfx,dt,tileBg,false);
+sctx.drawImage(tileFrame,ox,oy,ow,oh);
+actx.drawImage(tileFrame,0,0,W,H);
+}else{
 actx.fillStyle=tileBg;actx.fillRect(0,0,W,H);
 actx.drawImage(tileImg,0,0,W,H);
-ox=tileRect.x*dpr;oy=tileRect.y*dpr;ow=tileRect.w*dpr;oh=tileRect.h*dpr;
+}
 }
 const d=actx.getImageData(0,0,W,H).data;
-let lo=0,span=1;const inkSrc=source==='tiles'||source==='mytile';
+let lo=0,span=1;const inkSrc=source==='tiles'||source==='mytile'||source==='canvas';
 const ink=(r,g,b)=>{const mx=Math.max(r,g,b),mn=Math.min(r,g,b);return Math.max(1-(0.299*r+0.587*g+0.114*b)/255,mx?0.9*(mx-mn)/mx:0)};
 if(inkSrc){let mn=1,mx=0;for(let k=0;k<d.length;k+=8){const m=ink(d[k],d[k+1],d[k+2]);if(m<mn)mn=m;if(m>mx)mx=m}lo=mn;span=Math.max(0.15,mx-mn)}
 let x0=0,x1=W,step=2;
@@ -551,15 +677,15 @@ const tc=mode==='sweep'?0.008:mode==='motion'?0.02:0.06;
 let cr=0,cg=0,cb=0,cn=0;
 for(let i=0;i<BANDS;i++){
 const y0=Math.floor(i*H/BANDS),y1=Math.floor((i+1)*H/BANDS);
-let r=0,g=0,b=0,n=0,ik=0,ikMax=0,ikMin=1;
-for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x+=step){const k=(y*W+x)*4;r+=d[k];g+=d[k+1];b+=d[k+2];n++;if(inkSrc){const q=ink(d[k],d[k+1],d[k+2]);ik+=q;if(q>ikMax)ikMax=q;if(q<ikMin)ikMin=q}}
+let r=0,g=0,b=0,n=0,ik=0,ikMax=0,ikMin=1,md=0,mx=0;
+for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x+=step){const k=(y*W+x)*4;r+=d[k];g+=d[k+1];b+=d[k+2];n++;if(mode==='motion'){const pi=y*W+x,q=(0.299*d[k]+0.587*d[k+1]+0.114*d[k+2])/255,df=pxValid?Math.abs(q-pxPrev[pi]):0;pxPrev[pi]=q;md+=df;mx+=df*x}if(inkSrc){const q=ink(d[k],d[k+1],d[k+2]);ik+=q;if(q>ikMax)ikMax=q;if(q<ikMin)ikMin=q}}
 r/=n;g/=n;b/=n;cr+=r;cg+=g;cb+=b;cn++;
 const [h,s,val]=hsv(r,g,b);
 const lum=(0.299*r+0.587*g+0.114*b)/255;
 let level;
 if(mode==='motion'){
-level=prevLum[i]<0?0:Math.min(1,Math.abs(lum-prevLum[i])*14);
-prevLum[i]=lum;
+level=Math.min(1,Math.pow(md/n*7,0.8));
+if(voices[i].pan)voices[i].pan.pan.setTargetAtTime(md>0.001?Math.max(-0.9,Math.min(0.9,(mx/md/(W-1))*2-1)):0,ac.currentTime,0.08);
 }else{
 let l;if(inkSrc){const nz=q=>Math.min(1,Math.max(0,(q-lo)/span)),avg=ik/n;l=invert?1-(0.6*nz(ikMin)+0.4*nz(avg)):0.6*nz(ikMax)+0.4*nz(avg)}else l=invert?1-val:val;
 level=inkSrc?(mode==='sweep'?Math.pow(l,1.3):Math.pow(l,1.2)*(0.45+0.55*s)):mode==='sweep'?Math.pow(l,2.2):Math.pow(l,1.6)*(0.45+0.55*s);
@@ -574,6 +700,7 @@ bars[i].style.height=(4+level*56)+'px';
 bars[i].style.background=`rgb(${r|0},${g|0},${b|0})`;
 bars[i].style.boxShadow=level>0.05?'inset 0 -3px 0 #1e6bff':'none';
 }
+if(mode==='motion')pxValid=true;else voices.forEach(vc=>{if(vc.pan)vc.pan.pan.setTargetAtTime(0,now,0.1)});
 $('swatch').style.background=`rgb(${(cr/cn)|0},${(cg/cn)|0},${(cb/cn)|0})`;
 sctx.save();
 if(mode==='sweep'){
