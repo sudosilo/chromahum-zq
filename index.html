@@ -43,6 +43,13 @@ body.src-camera .only-cam{display:inline-block}
 body.src-patterns .only-pat,body.src-mytile .only-my{display:inline-block}
 body.src-patterns .row.only-pat,body.src-mytile .row.only-my,body.src-mytile .row.only-grid,body.src-tiles .row.only-grid{display:flex}
 body.src-mytile .panel.only-my{display:block}
+.only-tl{display:none}
+body.src-tiles .only-tl{display:inline-block}
+body.src-tiles .row.only-tl{display:flex}
+#screen.grab{pointer-events:auto;touch-action:none;cursor:grab;outline:3px dashed #1e6bff;outline-offset:-3px}
+.cols{flex:1;display:flex;gap:8px}
+.cols label{width:auto;flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12px}
+.cols input{width:100%;height:36px;border:1px solid var(--line);border-radius:8px;background:#fff;padding:2px}
 .row output{width:44px;text-align:right;color:var(--blue);font-weight:600}
 #pad{display:block;width:100%;max-width:340px;aspect-ratio:1;margin:0 auto;border:2px solid var(--blue2);border-radius:10px;touch-action:none;background:#fff}
 .edtitle{font-weight:700;margin:0 0 10px;color:var(--ink)}
@@ -101,7 +108,10 @@ footer span{color:var(--blue)}
 <div class="row only-grid"><label>Tiles across</label><input type="range" id="across" min="2" max="16" step="1" value="6"><output id="acrossVal">6</output></div>
 <div class="row only-my"><label>Arrangement</label><select id="arr"><option value="same">Same way</option><option value="random">Random turns</option><option value="pinwheel">Pinwheel</option><option value="stairs">Stairs</option><option value="mirror">Mirror</option><option value="kaleido">Kaleidoscope</option><option value="negative">Checker negative</option><option value="brick">Brick offset</option><option value="spinrows">Turning rows</option><option value="scatter">Scatter flips</option></select></div>
 <div class="row"><label>Volume</label><input type="range" id="vol" min="0" max="1" step="0.01" value="0.5"></div>
-<div class="row"><label>Sweep speed</label><input type="range" id="spd" min="5" max="400" step="1" value="60"></div>
+<div class="row only-tl"><label>Zoom</label><input type="range" id="zoom" min="1" max="8" step="0.05" value="1"><output id="zoomVal">1x</output></div>
+<div class="row only-tl"><label>Colors</label><div class="cols"><label><input type="color" id="cInk">Lines</label><label><input type="color" id="cStone">Tiles</label><label><input type="color" id="cGrout">Edges</label><label><input type="color" id="cBg">Back</label></div></div>
+<div class="row"><label>Sweep speed</label><input type="range" id="spd" min="0" max="400" step="1" value="60"></div>
+<div class="row"><label>Cue line</label><input type="range" id="cue" min="0" max="1000" step="1" value="0"></div>
 <div class="row"><label>Scale</label><select id="scale"><option value="penta">Pentatonic</option><option value="major">Major</option><option value="chrom">Chromatic</option><option value="fifths">Fifths drone</option></select></div>
 <div class="row"><label>Root pitch</label><input type="range" id="root" min="40" max="220" step="1" value="110"></div>
 <div class="row"><label>Wave</label><select id="wave"><option value="sawtooth">Saw</option><option value="square">Square</option><option value="triangle">Triangle</option><option value="sine">Sine</option></select></div>
@@ -111,12 +121,15 @@ footer span{color:var(--blue)}
 <button id="hold" class="only-cam">Freeze</button>
 <button id="spin" class="only-pat only-my">Spin</button>
 <button id="shuf" class="only-my">Shuffle</button>
+<button id="moveView" class="only-tl">Move view</button>
+<button id="resetView" class="only-tl">Reset view</button>
+<button id="resetCols" class="only-tl">Reset colors</button>
 <button id="upload" class="only-pat">Load picture</button>
 <input type="file" id="file" accept="image/*,.svg">
 </div>
 <p class="hint" id="hint"></p>
 </div>
-<footer>ChromaHum <span>v3</span></footer>
+<footer>ChromaHum <span>v4</span></footer>
 <script>
 const BANDS=12,W=96,H=72,PW=640,PH=480;
 const v=document.getElementById('v');
@@ -137,12 +150,12 @@ const srcHints={
 camera:'',
 patterns:' Patterns are built in high contrast pictures that each play their own tune. Load picture takes any image or SVG from the phone. Spin turns the picture slowly so Chord and Motion keep moving.',
 mytile:' Draw one square tile in the editor and it repeats across the stage. Your ink and color are the notes and the white is silence, and Dark is loud flips that. Tap any tile on the stage to turn it. Tiles across sets how many play through, Arrangement picks how the copies turn and flip, and Shuffle scrambles them.',
-tiles:' Tap tiles to rotate them and the song rewrites itself. On the board the curves are the notes. Dark is loud flips it so the bare tile rings instead. Closing a loop rings a chime. The menu at the top left of the board switches tile traditions.'
+tiles:' Tap tiles to rotate them and the song rewrites itself. On the board the curves are the notes, and Dark is loud flips it so the bare tile rings instead. Zoom closes in on a section and only that section plays. Move view lets you drag to pan and pinch to zoom, then switch it off to go back to turning tiles. Colors repaint the lines, tiles, edges and background. The menu at the top left of the board switches tile traditions.'
 };
 const scales={penta:[0,3,5,7,10],major:[0,2,4,5,7,9,11],chrom:[0,1,2,3,4,5,6,7,8,9,10,11],fifths:[0,7]};
 const barsEl=$('bands');const bars=[];
 for(let i=0;i<BANDS;i++){const d=document.createElement('div');barsEl.appendChild(d);bars.push(d)}
-function setHint(){$('hint').textContent=hints[mode]+srcHints[source]}
+function setHint(){$('hint').textContent=hints[mode]+srcHints[source]+' Slide Sweep speed all the way down to park the line, and Cue line sets exactly where it sits.'}
 setHint();
 document.querySelectorAll('#modeRow button').forEach(b=>b.onclick=()=>{
 document.querySelectorAll('#modeRow button').forEach(x=>x.classList.remove('on'));
@@ -177,16 +190,6 @@ osc.connect(filt);filt.connect(g);g.connect(master);osc.start();
 voices.push({osc,filt,g});
 }
 }
-function chime(){
-if(!ac)return;const t=ac.currentTime;
-[0,4,7,12].forEach((s,k)=>{
-const o=ac.createOscillator(),g=ac.createGain();o.type='triangle';
-o.frequency.value=(+rootEl.value)*4*Math.pow(2,s/12);
-g.gain.setValueAtTime(0,t+k*0.07);g.gain.linearRampToValueAtTime(0.18,t+k*0.07+0.01);g.gain.exponentialRampToValueAtTime(0.001,t+k*0.07+0.6);
-o.connect(g);g.connect(master);o.start(t+k*0.07);o.stop(t+k*0.07+0.65);
-});
-}
-
 /* ---------- camera ---------- */
 function stopCam(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}}
 async function startCam(){
@@ -286,22 +289,24 @@ const TILE_CSS=`.tile-base{fill:var(--stone);stroke:var(--grout);stroke-width:.8
 .tile-base-alt{fill:var(--bg);stroke:var(--grout);stroke-width:.8}
 .arc{fill:none;stroke:var(--ink);opacity:.7;stroke-linecap:round}
 .arc-band{fill:none;stroke:var(--accent);stroke-width:4;opacity:0;stroke-linecap:round}
-.arc-band.lit{opacity:.7;stroke:var(--glow)}
+.arc-band.lit{opacity:0}
 .arc-band.subtle{stroke-width:2.5}
-.arc-band.subtle.lit{opacity:.9;stroke:var(--accent)}
+.arc-band.subtle.lit{opacity:0}
 .creature{stroke:var(--ink);stroke-width:.6;stroke-linejoin:round}
 .vertex-glow{fill:var(--glow);opacity:0}
-.vertex-glow.lit{opacity:.5}
+.vertex-glow.lit{opacity:0}
 .wang-edge-band{fill:none;stroke:var(--accent);stroke-width:3;opacity:0}
-.wang-edge-band.lit{opacity:.6;stroke:var(--glow)}
+.wang-edge-band.lit{opacity:0}
 .tile-hit{fill:transparent}
 .knot-under{stroke:var(--bg);stroke-linecap:butt}`;
-let tileImg=null,tileRect=null,tileBg='#f4ede2',tileTimer=null,tileObs=null,lastScore=0;
+let tileImg=null,tileRect=null,tileBg='#f4ede2',tileTimer=null,tileObs=null;
 function tileDoc(){try{return tf.contentDocument}catch(e){return null}}
 function rasterTiles(){
 const doc=tileDoc();if(!doc)return;const svg=doc.getElementById('board');if(!svg)return;
 const r=svg.getBoundingClientRect();if(!r.width||!r.height)return;
+applyColorOv(doc);
 const cs=getComputedStyle(doc.documentElement);
+syncColorInputs(cs);
 const vars=['bg','bg-deep','ink','stone','stone-dark','grout','accent','glow'].map(k=>'--'+k+':'+cs.getPropertyValue('--'+k).trim()).join(';');
 tileBg=cs.getPropertyValue('--bg').trim()||'#f4ede2';
 const clone=svg.cloneNode(true);
@@ -322,8 +327,6 @@ const doc=tileDoc();if(!doc)return;const svg=doc.getElementById('board');if(!svg
 if(tileObs)tileObs.disconnect();
 tileObs=new MutationObserver(()=>{queueTiles();setTimeout(queueTiles,420)});
 tileObs.observe(svg,{subtree:true,childList:true,attributes:true,attributeFilter:['transform','class','fill','style','viewBox']});
-const sc=doc.getElementById('score');
-if(sc)new MutationObserver(()=>{const n=parseInt(sc.textContent)||0;if(n>lastScore)chime();lastScore=n}).observe(sc,{childList:true,characterData:true,subtree:true});
 queueTiles();
 }
 tf.addEventListener('load',()=>{hookTiles();tf.contentWindow.addEventListener('resize',()=>setTimeout(queueTiles,300))});
@@ -441,11 +444,49 @@ if(saved){const img=new Image();img.onload=()=>{px.drawImage(img,0,0,PS,PS);padC
 else{starter('arcs');undoStack=[]}
 })();
 
+/* ---------- tile view and colors ---------- */
+let colorOv={},vs={z:1,cx:0.5,cy:0.5,fw:1,fh:1},moveOn=false,viewQueued=false;
+const COLMAP={cInk:'ink',cStone:'stone',cGrout:'grout',cBg:'bg'};
+function applyColorOv(doc){
+const root=doc.documentElement.style;
+for(const[k,v]of Object.entries(colorOv)){root.setProperty('--'+k,v);if(k==='bg')doc.body.style.background=v}
+}
+function syncColorInputs(cs){
+for(const[id,k]of Object.entries(COLMAP)){if(colorOv[k])continue;const v=cs.getPropertyValue('--'+k).trim();if(/^#[0-9a-f]{6}$/i.test(v))$(id).value=v}
+}
+Object.entries(COLMAP).forEach(([id,k])=>$(id).oninput=e=>{colorOv[k]=e.target.value;const doc=tileDoc();if(doc)applyColorOv(doc);queueTiles()});
+$('resetCols').onclick=()=>{colorOv={};try{tf.contentDocument.body.style.background='';tf.contentWindow.restorePalette()}catch(e){}queueTiles()};
+function pushView(){
+viewQueued=false;let r=null;try{r=tf.contentWindow.setView(vs.z,vs.cx,vs.cy)}catch(e){}
+if(r)Object.assign(vs,r);
+$('zoom').value=vs.z;$('zoomVal').textContent=vs.z.toFixed(1)+'x';queueTiles();
+}
+function queueView(){if(!viewQueued){viewQueued=true;requestAnimationFrame(pushView)}}
+$('zoom').oninput=e=>{vs.z=+e.target.value;queueView()};
+$('resetView').onclick=()=>{vs={z:1,cx:0.5,cy:0.5,fw:1,fh:1};queueView()};
+$('moveView').onclick=e=>{moveOn=!moveOn;e.target.classList.toggle('on',moveOn);scr.classList.toggle('grab',moveOn&&source==='tiles')};
+const ptrs=new Map();let pinch0=0,z0=1;
+scr.addEventListener('pointerdown',e=>{if(!moveOn)return;scr.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});if(ptrs.size===2){const[a,b]=[...ptrs.values()];pinch0=Math.hypot(a.x-b.x,a.y-b.y);z0=vs.z}});
+scr.addEventListener('pointermove',e=>{
+if(!moveOn||!ptrs.has(e.pointerId))return;const p=ptrs.get(e.pointerId),dx=e.clientX-p.x,dy=e.clientY-p.y;
+ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+if(ptrs.size===1&&tileRect){vs.cx-=dx/tileRect.w*vs.fw;vs.cy-=dy/tileRect.h*vs.fh}
+else if(ptrs.size===2&&pinch0){const[a,b]=[...ptrs.values()];vs.z=Math.max(1,Math.min(8,z0*Math.hypot(a.x-b.x,a.y-b.y)/pinch0))}
+queueView();
+});
+const ptrEnd=e=>{ptrs.delete(e.pointerId);if(ptrs.size<2)pinch0=0};
+scr.addEventListener('pointerup',ptrEnd);scr.addEventListener('pointercancel',ptrEnd);
+let cueHeld=false;
+$('cue').addEventListener('pointerdown',()=>cueHeld=true);
+window.addEventListener('pointerup',()=>cueHeld=false);
+$('cue').oninput=e=>{sweepX=(+e.target.value/1000)*W*0.9999};
+
 /* ---------- source switching ---------- */
 async function setSource(s){
 source=s;document.body.className='src-'+s;
 document.querySelectorAll('#srcRow button').forEach(b=>b.classList.toggle('on',b.dataset.s===s));
 stage.classList.toggle('tall',s==='tiles');
+scr.classList.toggle('grab',moveOn&&s==='tiles');
 prevLum.fill(-1);setHint();
 showAcross();
 if(s==='patterns')drawPattern();
@@ -504,14 +545,14 @@ let lo=0,span=1;const inkSrc=source==='tiles'||source==='mytile';
 const ink=(r,g,b)=>{const mx=Math.max(r,g,b),mn=Math.min(r,g,b);return Math.max(1-(0.299*r+0.587*g+0.114*b)/255,mx?0.9*(mx-mn)/mx:0)};
 if(inkSrc){let mn=1,mx=0;for(let k=0;k<d.length;k+=8){const m=ink(d[k],d[k+1],d[k+2]);if(m<mn)mn=m;if(m>mx)mx=m}lo=mn;span=Math.max(0.15,mx-mn)}
 let x0=0,x1=W,step=2;
-if(mode==='sweep'){sweepX=(sweepX+(+spd.value)*dt)%W;x0=Math.floor(sweepX);x1=Math.min(W,x0+2);step=1}
+if(mode==='sweep'){sweepX=(sweepX+(+spd.value)*dt)%W;if(!cueHeld&&+spd.value>0)$('cue').value=Math.round(sweepX/W*1000);x0=Math.floor(sweepX);x1=Math.min(W,x0+2);step=1}
 const now=ac.currentTime;
 const tc=mode==='sweep'?0.008:mode==='motion'?0.02:0.06;
 let cr=0,cg=0,cb=0,cn=0;
 for(let i=0;i<BANDS;i++){
 const y0=Math.floor(i*H/BANDS),y1=Math.floor((i+1)*H/BANDS);
-let r=0,g=0,b=0,n=0;
-for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x+=step){const k=(y*W+x)*4;r+=d[k];g+=d[k+1];b+=d[k+2];n++}
+let r=0,g=0,b=0,n=0,ik=0,ikMax=0,ikMin=1;
+for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x+=step){const k=(y*W+x)*4;r+=d[k];g+=d[k+1];b+=d[k+2];n++;if(inkSrc){const q=ink(d[k],d[k+1],d[k+2]);ik+=q;if(q>ikMax)ikMax=q;if(q<ikMin)ikMin=q}}
 r/=n;g/=n;b/=n;cr+=r;cg+=g;cb+=b;cn++;
 const [h,s,val]=hsv(r,g,b);
 const lum=(0.299*r+0.587*g+0.114*b)/255;
@@ -520,8 +561,8 @@ if(mode==='motion'){
 level=prevLum[i]<0?0:Math.min(1,Math.abs(lum-prevLum[i])*14);
 prevLum[i]=lum;
 }else{
-let l;if(inkSrc){const nv=Math.min(1,Math.max(0,(ink(r,g,b)-lo)/span));l=invert?1-nv:nv}else l=invert?1-val:val;
-level=mode==='sweep'?Math.pow(l,2.2):Math.pow(l,1.6)*(0.45+0.55*s);
+let l;if(inkSrc){const nz=q=>Math.min(1,Math.max(0,(q-lo)/span)),avg=ik/n;l=invert?1-(0.6*nz(ikMin)+0.4*nz(avg)):0.6*nz(ikMax)+0.4*nz(avg)}else l=invert?1-val:val;
+level=inkSrc?(mode==='sweep'?Math.pow(l,1.3):Math.pow(l,1.2)*(0.45+0.55*s)):mode==='sweep'?Math.pow(l,2.2):Math.pow(l,1.6)*(0.45+0.55*s);
 }
 levels[i]=level;
 const vc=voices[i];

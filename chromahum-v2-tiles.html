@@ -83,6 +83,9 @@
   .style-row-desc { font-size: 12px; color: var(--stone-dark); margin-top: 4px; font-style: italic; font-family: 'Cormorant Garamond', Georgia, 'Times New Roman', serif; line-height: 1.3; }
   .check { width: 16px; height: 16px; flex-shrink: 0; opacity: 0; transition: opacity 0.2s; }
   .style-row.active .check { opacity: 1; }
+  .stats, .hint { display: none !important; }
+  .arc-band.lit, .vertex-glow.lit, .wang-edge-band.lit, .arc-band.subtle.lit { opacity: 0 !important; }
+  .board { touch-action: none; }
   .check::after { content: '◆'; color: var(--accent); font-size: 12px; }
 </style>
 </head>
@@ -271,6 +274,24 @@ const STYLES = [
 let currentStyle = STYLES[0];
 let ACROSS = null;
 window.setAcross = n => { ACROSS = n; buildBoard(); };
+let BASE_VB = null, VIEW = { z: 1, cx: 0.5, cy: 0.5 };
+function applyView() {
+  if (!BASE_VB) return null;
+  const r = board.getBoundingClientRect();
+  if (!r.width || !r.height) return null;
+  const [bx, by, bw, bh] = BASE_VB, aspect = r.width / r.height;
+  let rw, rh;
+  if (bw / bh > aspect) { rh = bh; rw = bh * aspect; } else { rw = bw; rh = bw / aspect; }
+  rw /= VIEW.z; rh /= VIEW.z;
+  const hx = rw / bw / 2, hy = rh / bh / 2;
+  VIEW.cx = Math.min(1 - hx, Math.max(hx, VIEW.cx));
+  VIEW.cy = Math.min(1 - hy, Math.max(hy, VIEW.cy));
+  board.setAttribute('viewBox', `${bx + VIEW.cx * bw - rw / 2} ${by + VIEW.cy * bh - rh / 2} ${rw} ${rh}`);
+  board.setAttribute('preserveAspectRatio', 'none');
+  return { z: VIEW.z, cx: VIEW.cx, cy: VIEW.cy, fw: rw / bw, fh: rh / bh };
+}
+window.setView = (z, cx, cy) => { VIEW = { z: Math.max(1, Math.min(8, z)), cx, cy }; return applyView(); };
+window.restorePalette = () => applyStylePalette(currentStyle);
 
 const board = document.getElementById('board');
 const scoreEl = document.getElementById('score');
@@ -747,7 +768,8 @@ function buildBoard() {
     const pad = TILE_SIZE * 0.3;
     board.setAttribute('viewBox', `${-pad} ${-pad} ${totalW + pad * 2} ${totalH + pad * 2}`);
   }
-  board.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  BASE_VB = board.getAttribute('viewBox').split(' ').map(Number);
+  applyView();
 
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
