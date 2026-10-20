@@ -13,12 +13,18 @@ header{position:sticky;top:0;z-index:5;background:var(--bg);display:flex;align-i
 h1{font-size:20px;margin:0;letter-spacing:.5px}
 h1 span{color:var(--blue)}
 #swatch{width:30px;height:30px;border-radius:8px;border:2px solid var(--blue2);background:#fff}
-.modes{display:flex;gap:6px;padding:10px 16px}
-.modes button{flex:1;padding:10px;border:1px solid var(--line);background:var(--card);border-radius:10px;font-weight:600;color:var(--ink);font-size:15px}
-.modes button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+.seg{display:flex;gap:6px;padding:10px 16px 0}
+.seg button{flex:1;padding:10px;border:1px solid var(--line);background:var(--card);border-radius:10px;font-weight:600;color:var(--ink);font-size:15px}
+.seg button.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+.seg.src button{font-size:14px;padding:8px}
+.seg.src button.on{background:#e6efff;color:var(--blue);border-color:var(--blue)}
+.modes{padding-bottom:10px}
 .stage{position:relative;margin:0 16px;border-radius:14px;overflow:hidden;background:#dfe8fa;aspect-ratio:4/3;border:2px solid var(--blue2)}
+.stage.tall{aspect-ratio:auto;height:70vh}
 #v{position:absolute;width:2px;height:2px;opacity:0;pointer-events:none}
-#screen{position:absolute;inset:0;width:100%;height:100%;display:block}
+#tiles{position:absolute;inset:0;width:100%;height:100%;border:0;display:none;background:#f4ede2}
+.stage.tall #tiles{display:block}
+#screen{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none;z-index:2}
 .start{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:rgba(244,248,255,.94);z-index:3}
 .start button{padding:16px 28px;font-size:18px;border:none;border-radius:14px;background:var(--blue);color:#fff;font-weight:700}
 .start p{margin:0;color:var(--muted);padding:0 24px;text-align:center;font-size:14px}
@@ -32,58 +38,86 @@ h1 span{color:var(--blue)}
 .toggle{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .toggle button{padding:9px 14px;border-radius:999px;border:1px solid var(--line);background:#fff;color:var(--ink);font-size:14px}
 .toggle button.on{background:#e6efff;border-color:var(--blue);color:var(--blue);font-weight:600}
+.only-cam,.only-pat{display:none}
+body.src-camera .only-cam{display:inline-block}
+body.src-patterns .only-pat{display:inline-block}
+body.src-patterns .row.only-pat{display:flex}
+#file{display:none}
 .hint{font-size:13px;color:var(--muted);margin:12px 0 0;line-height:1.4}
 footer{text-align:center;font-size:12px;color:var(--muted);padding:0 16px 28px}
 footer span{color:var(--blue)}
 </style>
 </head>
-<body>
+<body class="src-camera">
 <header><h1>Chroma<span>Hum</span></h1><div id="swatch"></div></header>
-<div class="modes">
+<div class="seg src" id="srcRow">
+<button data-s="camera" class="on">Camera</button>
+<button data-s="patterns">Patterns</button>
+<button data-s="tiles">Tiles</button>
+</div>
+<div class="seg modes" id="modeRow">
 <button data-m="sweep" class="on">Sweep</button>
 <button data-m="chord">Chord</button>
 <button data-m="motion">Motion</button>
 </div>
-<div class="stage">
+<div class="stage" id="stage">
 <video id="v" playsinline muted autoplay></video>
+<iframe id="tiles" title="Tiles" src="chromahum-v2-tiles.html"></iframe>
 <canvas id="screen"></canvas>
-<div class="start" id="start"><button id="go">Start camera and sound</button><p>Point the back camera at anything. Bright and colorful things sing louder.</p></div>
+<div class="start" id="start"><button id="go">Start sound</button><p id="startMsg">Camera points at anything, Patterns plays built in pictures, Tiles turns the tile spinner board into a song.</p></div>
 </div>
 <div class="bands" id="bands"></div>
 <div class="panel">
+<div class="row only-pat"><label>Picture</label><select id="pat"></select></div>
 <div class="row"><label>Volume</label><input type="range" id="vol" min="0" max="1" step="0.01" value="0.5"></div>
 <div class="row"><label>Sweep speed</label><input type="range" id="spd" min="5" max="400" step="1" value="60"></div>
 <div class="row"><label>Scale</label><select id="scale"><option value="penta">Pentatonic</option><option value="major">Major</option><option value="chrom">Chromatic</option><option value="fifths">Fifths drone</option></select></div>
 <div class="row"><label>Root pitch</label><input type="range" id="root" min="40" max="220" step="1" value="110"></div>
 <div class="row"><label>Wave</label><select id="wave"><option value="sawtooth">Saw</option><option value="square">Square</option><option value="triangle">Triangle</option><option value="sine">Sine</option></select></div>
-<div class="toggle"><button id="inv">Dark is loud</button><button id="flip">Flip camera</button><button id="hold">Freeze</button></div>
+<div class="toggle">
+<button id="inv">Dark is loud</button>
+<button id="flip" class="only-cam">Flip camera</button>
+<button id="hold" class="only-cam">Freeze</button>
+<button id="spin" class="only-pat">Spin</button>
+<button id="upload" class="only-pat">Load picture</button>
+<input type="file" id="file" accept="image/*,.svg">
+</div>
 <p class="hint" id="hint"></p>
 </div>
-<footer>ChromaHum <span>v1</span></footer>
+<footer>ChromaHum <span>v2</span></footer>
 <script>
-const BANDS=12,W=96,H=72;
+const BANDS=12,W=96,H=72,PW=640,PH=480;
 const v=document.getElementById('v');
 const scr=document.getElementById('screen');
 const sctx=scr.getContext('2d');
 const an=document.createElement('canvas');an.width=W;an.height=H;
 const actx=an.getContext('2d',{willReadFrequently:true});
 const $=id=>document.getElementById(id);
-const vol=$('vol'),spd=$('spd'),scaleSel=$('scale'),rootEl=$('root'),waveSel=$('wave');
-let mode='sweep',ac=null,master=null,voices=[],invert=false,facing='environment',frozen=false,stream=null;
+const vol=$('vol'),spd=$('spd'),scaleSel=$('scale'),rootEl=$('root'),waveSel=$('wave'),patSel=$('pat'),stage=$('stage'),tf=$('tiles');
+let mode='sweep',source='camera',ac=null,master=null,voices=[],invert=false,facing='environment',frozen=false,stream=null,started=false,spinOn=false,spinA=0;
 let prevLum=new Array(BANDS).fill(-1),sweepX=0,last=0,levels=new Array(BANDS).fill(0);
 const hints={
 sweep:'A blue line scans left to right like a barcode reader. Each column plays as it passes. Top of the frame is high pitch, bottom is low. Bright spots ring out, so black and white stripes turn into rhythm.',
 chord:'The whole frame plays at once as a held chord. Each row of the picture is one note. Color sets the tone, brightness sets the volume.',
 motion:'Only change makes sound. A spinning fan, a flickering light, or a waving hand pulses the notes on and off.'
 };
+const srcHints={
+camera:'',
+patterns:' Patterns are built in high contrast pictures that each play their own tune. Load picture takes any image or SVG from the phone. Spin turns the picture slowly so Chord and Motion keep moving.',
+tiles:' Tap tiles to rotate them and the song rewrites itself. On the board the curves are the notes, so dark lines ring out unless Dark is loud is switched on. Closing a loop rings a chime. The menu at the top left of the board switches tile traditions.'
+};
 const scales={penta:[0,3,5,7,10],major:[0,2,4,5,7,9,11],chrom:[0,1,2,3,4,5,6,7,8,9,10,11],fifths:[0,7]};
 const barsEl=$('bands');const bars=[];
 for(let i=0;i<BANDS;i++){const d=document.createElement('div');barsEl.appendChild(d);bars.push(d)}
-$('hint').textContent=hints.sweep;
-document.querySelectorAll('.modes button').forEach(b=>b.onclick=()=>{
-document.querySelectorAll('.modes button').forEach(x=>x.classList.remove('on'));
-b.classList.add('on');mode=b.dataset.m;$('hint').textContent=hints[mode];prevLum.fill(-1);
+function setHint(){$('hint').textContent=hints[mode]+srcHints[source]}
+setHint();
+document.querySelectorAll('#modeRow button').forEach(b=>b.onclick=()=>{
+document.querySelectorAll('#modeRow button').forEach(x=>x.classList.remove('on'));
+b.classList.add('on');mode=b.dataset.m;setHint();prevLum.fill(-1);
 });
+document.querySelectorAll('#srcRow button').forEach(b=>b.onclick=()=>setSource(b.dataset.s));
+
+/* ---------- audio ---------- */
 function freqFor(i){
 const s=scales[scaleSel.value];const idx=BANDS-1-i;
 const semi=s[idx%s.length]+12*Math.floor(idx/s.length);
@@ -95,12 +129,8 @@ waveSel.onchange=()=>voices.forEach(vc=>vc.osc.type=waveSel.value);
 vol.oninput=()=>{if(master)master.gain.setTargetAtTime(+vol.value,ac.currentTime,0.05)};
 $('inv').onclick=e=>{invert=!invert;e.target.classList.toggle('on',invert)};
 $('hold').onclick=e=>{frozen=!frozen;e.target.classList.toggle('on',frozen);frozen?v.pause():v.play()};
-$('flip').onclick=async()=>{facing=facing==='environment'?'user':'environment';await startCam()};
-async function startCam(){
-if(stream)stream.getTracks().forEach(t=>t.stop());
-stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:facing},width:{ideal:640},height:{ideal:480}}});
-v.srcObject=stream;await v.play();frozen=false;$('hold').classList.remove('on');
-}
+$('flip').onclick=async()=>{facing=facing==='environment'?'user':'environment';if(source==='camera')await startCam()};
+$('spin').onclick=e=>{spinOn=!spinOn;e.target.classList.toggle('on',spinOn)};
 function startAudio(){
 ac=new (window.AudioContext||window.webkitAudioContext)();
 const comp=ac.createDynamicsCompressor();comp.threshold.value=-18;comp.ratio.value=6;
@@ -114,15 +144,181 @@ osc.connect(filt);filt.connect(g);g.connect(master);osc.start();
 voices.push({osc,filt,g});
 }
 }
-$('go').onclick=async()=>{
-try{startAudio();await startCam();$('start').style.display='none';requestAnimationFrame(loop)}
-catch(err){$('start').querySelector('p').textContent='Camera blocked. Allow camera access for this site in the browser, then tap start again.';if(ac){ac.close();ac=null;voices=[]}}
-};
+function chime(){
+if(!ac)return;const t=ac.currentTime;
+[0,4,7,12].forEach((s,k)=>{
+const o=ac.createOscillator(),g=ac.createGain();o.type='triangle';
+o.frequency.value=(+rootEl.value)*4*Math.pow(2,s/12);
+g.gain.setValueAtTime(0,t+k*0.07);g.gain.linearRampToValueAtTime(0.18,t+k*0.07+0.01);g.gain.exponentialRampToValueAtTime(0.001,t+k*0.07+0.6);
+o.connect(g);g.connect(master);o.start(t+k*0.07);o.stop(t+k*0.07+0.65);
+});
+}
+
+/* ---------- camera ---------- */
+function stopCam(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}}
+async function startCam(){
+stopCam();
+stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:facing},width:{ideal:640},height:{ideal:480}}});
+v.srcObject=stream;await v.play();frozen=false;$('hold').classList.remove('on');
+}
 function crop(){
 const vw=v.videoWidth,vh=v.videoHeight;const target=4/3;
 if(vw/vh>target){const sw=vh*target;return[(vw-sw)/2,0,sw,vh]}
 const sh=vw/target;return[0,(vh-sh)/2,vw,sh];
 }
+
+/* ---------- patterns ---------- */
+const patBase=document.createElement('canvas');patBase.width=PW;patBase.height=PH;
+const pb=patBase.getContext('2d');
+const patFrame=document.createElement('canvas');patFrame.width=PW;patFrame.height=PH;
+const pf=patFrame.getContext('2d');
+let uploaded=null;
+function rng(seed){let s=seed>>>0;return()=>{s=(s*1664525+1013904223)>>>0;return s/4294967296}}
+function star(c,x,y,r,col){c.fillStyle=col;c.beginPath();for(let i=0;i<10;i++){const a=-Math.PI/2+i*Math.PI/5,rr=i%2?r*0.4:r;c.lineTo(x+Math.cos(a)*rr,y+Math.sin(a)*rr)}c.closePath();c.fill()}
+const PATTERNS={
+stripes:{name:'Stars and Stripes',draw(c){
+const sh=PH/13;for(let i=0;i<13;i++){c.fillStyle=i%2?'#ffffff':'#b22234';c.fillRect(0,i*sh,PW,sh+1)}
+const cw=PW*0.4,ch=sh*7;c.fillStyle='#3c3b6e';c.fillRect(0,0,cw,ch);
+for(let r=0;r<9;r++){const n=r%2?5:6;for(let k=0;k<n;k++){const x=cw/12*(r%2?2*k+2:2*k+1),y=ch/10*(r+1);star(c,x,y,sh*0.32,'#ffffff')}}
+}},
+barcode:{name:'Barcode',draw(c){
+c.fillStyle='#ffffff';c.fillRect(0,0,PW,PH);const r=rng(7);let x=30;
+while(x<PW-30){const w=2+Math.floor(r()*4)*3;if(r()>0.45){c.fillStyle='#111111';c.fillRect(x,40,w,PH-80)}x+=w+2}
+}},
+stitch:{name:'Cross Stitch Rose',draw(c){
+c.fillStyle='#fbf7ee';c.fillRect(0,0,PW,PH);const g=16,cx=PW/2,cy=PH/2;c.lineWidth=3;c.lineCap='round';
+for(let y=0;y<PH/g;y++)for(let x=0;x<PW/g;x++){
+const dx=(x*g+g/2-cx)/g,dy=(y*g+g/2-cy)/g,d=Math.hypot(dx,dy),a=Math.atan2(dy,dx);
+const petal=Math.abs(Math.cos(a*4))*6+4;let col=null;
+if(d<3)col='#1e6bff';else if(d<petal)col=d<petal-2?'#c2185b':'#7a0f3a';else if(Math.abs(d-13)<0.8)col='#2e7d32';else if((x+y)%7===0&&d>15)col='#1e6bff';
+if(col){c.strokeStyle=col;const px=x*g+3,py=y*g+3,s=g-6;c.beginPath();c.moveTo(px,py);c.lineTo(px+s,py+s);c.moveTo(px+s,py);c.lineTo(px,py+s);c.stroke()}
+}
+}},
+stencil:{name:'Damask Stencil',draw(c){
+c.fillStyle='#f6f1e4';c.fillRect(0,0,PW,PH);c.fillStyle='#1a1a2e';
+const cell=(x,y,s)=>{c.save();c.translate(x,y);for(const m of[1,-1]){c.save();c.scale(m,1);c.beginPath();c.moveTo(0,-s);c.bezierCurveTo(s*0.6,-s*0.8,s*0.7,-s*0.2,s*0.25,0);c.bezierCurveTo(s*0.7,s*0.2,s*0.6,s*0.8,0,s);c.bezierCurveTo(s*0.2,s*0.4,s*0.15,-s*0.4,0,-s);c.fill();c.beginPath();c.arc(s*0.45,-s*0.55,s*0.1,0,7);c.fill();c.beginPath();c.arc(s*0.45,s*0.55,s*0.1,0,7);c.fill();c.restore()}c.restore()};
+for(let y=0;y<4;y++)for(let x=0;x<5;x++)cell(x*140+(y%2?70:0),y*140+40,58);
+}},
+lace:{name:'Lace Doily',draw(c){
+c.fillStyle='#ffffff';c.fillRect(0,0,PW,PH);c.strokeStyle='#1a2a4a';c.fillStyle='#1a2a4a';const cx=PW/2,cy=PH/2;
+for(let ring=1;ring<=6;ring++){const R=ring*36,n=ring*8;c.lineWidth=ring%2?3:1.5;c.beginPath();for(let i=0;i<=n*8;i++){const a=i/(n*8)*Math.PI*2,rr=R+Math.abs(Math.sin(a*n/2))*10;c.lineTo(cx+Math.cos(a)*rr,cy+Math.sin(a)*rr)}c.stroke();
+for(let i=0;i<n;i++){const a=i/n*Math.PI*2;c.beginPath();c.arc(cx+Math.cos(a)*(R+18),cy+Math.sin(a)*(R+18),ring%2?4:2.5,0,7);c.fill()}}
+}},
+checker:{name:'Checkerboard',draw(c){const s=40;for(let y=0;y<PH/s;y++)for(let x=0;x<PW/s;x++){c.fillStyle=(x+y)%2?'#111111':'#ffffff';c.fillRect(x*s,y*s,s,s)}}},
+spiral:{name:'Spiral',draw(c){
+c.fillStyle='#ffffff';c.fillRect(0,0,PW,PH);c.strokeStyle='#0d2b6b';c.lineWidth=14;c.lineCap='round';c.beginPath();
+for(let a=0;a<Math.PI*16;a+=0.05){const r=4+a*7.5;c.lineTo(PW/2+Math.cos(a)*r,PH/2+Math.sin(a)*r)}c.stroke();
+}},
+sunburst:{name:'Sunburst',draw(c){
+c.fillStyle='#fff8e1';c.fillRect(0,0,PW,PH);const n=32;
+for(let i=0;i<n;i+=2){const a0=i/n*Math.PI*2,a1=(i+1)/n*Math.PI*2;c.fillStyle=i%4?'#e65100':'#1e6bff';c.beginPath();c.moveTo(PW/2,PH/2);c.arc(PW/2,PH/2,PW,a0,a1);c.closePath();c.fill()}
+c.fillStyle='#ffffff';c.beginPath();c.arc(PW/2,PH/2,46,0,7);c.fill();
+}},
+circuit:{name:'Circuit Board',draw(c){
+c.fillStyle='#eef6ee';c.fillRect(0,0,PW,PH);const r=rng(42);c.strokeStyle='#0b5d1e';c.fillStyle='#0b5d1e';c.lineWidth=4;c.lineCap='square';
+for(let k=0;k<40;k++){let x=Math.round(r()*16)*40,y=Math.round(r()*12)*40;c.beginPath();c.moveTo(x,y);for(let s=0;s<4;s++){if(r()>0.5)x+=(r()>0.5?1:-1)*40*Math.ceil(r()*3);else y+=(r()>0.5?1:-1)*40*Math.ceil(r()*3);c.lineTo(x,y)}c.stroke();c.beginPath();c.arc(x,y,8,0,7);c.fill()}
+}},
+dots:{name:'Polka Dots',draw(c){
+c.fillStyle='#ffffff';c.fillRect(0,0,PW,PH);const r=rng(99);
+for(let y=0;y<9;y++)for(let x=0;x<12;x++){c.fillStyle=['#1e6bff','#111111','#d81b60'][Math.floor(r()*3)];c.beginPath();c.arc(x*56+28+(y%2?28:0),y*56+28,6+r()*18,0,7);c.fill()}
+}}
+};
+function fillPatSelect(){
+patSel.innerHTML='';
+Object.entries(PATTERNS).forEach(([k,p])=>{const o=document.createElement('option');o.value=k;o.textContent=p.name;patSel.appendChild(o)});
+if(uploaded){const o=document.createElement('option');o.value='upload';o.textContent='Your picture';patSel.appendChild(o)}
+}
+function drawPattern(){
+pb.setTransform(1,0,0,1,0,0);pb.fillStyle='#ffffff';pb.fillRect(0,0,PW,PH);
+if(patSel.value==='upload'&&uploaded){const s=Math.min(PW/uploaded.width,PH/uploaded.height);const w=uploaded.width*s,h=uploaded.height*s;pb.drawImage(uploaded,(PW-w)/2,(PH-h)/2,w,h)}
+else (PATTERNS[patSel.value]||PATTERNS.stripes).draw(pb);
+prevLum.fill(-1);
+}
+patSel.onchange=drawPattern;
+$('upload').onclick=()=>$('file').click();
+$('file').onchange=e=>{
+const f=e.target.files[0];if(!f)return;const img=new Image();
+img.onload=()=>{uploaded=img;fillPatSelect();patSel.value='upload';drawPattern()};
+img.src=URL.createObjectURL(f);
+};
+fillPatSelect();drawPattern();
+function composePattern(dt){
+if(!spinOn){pf.drawImage(patBase,0,0);return}
+spinA+=dt*0.35;pf.fillStyle='#ffffff';pf.fillRect(0,0,PW,PH);
+pf.save();pf.translate(PW/2,PH/2);pf.rotate(spinA);pf.scale(1.35,1.35);pf.drawImage(patBase,-PW/2,-PH/2);pf.restore();
+}
+
+/* ---------- tiles ---------- */
+const TILE_CSS=`.tile-base{fill:var(--stone);stroke:var(--grout);stroke-width:.8}
+.tile-base-alt{fill:var(--bg);stroke:var(--grout);stroke-width:.8}
+.arc{fill:none;stroke:var(--ink);opacity:.7;stroke-linecap:round}
+.arc-band{fill:none;stroke:var(--accent);stroke-width:4;opacity:0;stroke-linecap:round}
+.arc-band.lit{opacity:.7;stroke:var(--glow)}
+.arc-band.subtle{stroke-width:2.5}
+.arc-band.subtle.lit{opacity:.9;stroke:var(--accent)}
+.creature{stroke:var(--ink);stroke-width:.6;stroke-linejoin:round}
+.vertex-glow{fill:var(--glow);opacity:0}
+.vertex-glow.lit{opacity:.5}
+.wang-edge-band{fill:none;stroke:var(--accent);stroke-width:3;opacity:0}
+.wang-edge-band.lit{opacity:.6;stroke:var(--glow)}
+.tile-hit{fill:transparent}
+.knot-under{stroke:var(--bg);stroke-linecap:butt}`;
+let tileImg=null,tileRect=null,tileBg='#f4ede2',tileTimer=null,tileObs=null,lastScore=0;
+function tileDoc(){try{return tf.contentDocument}catch(e){return null}}
+function rasterTiles(){
+const doc=tileDoc();if(!doc)return;const svg=doc.getElementById('board');if(!svg)return;
+const r=svg.getBoundingClientRect();if(!r.width||!r.height)return;
+const cs=getComputedStyle(doc.documentElement);
+const vars=['bg','bg-deep','ink','stone','stone-dark','grout','accent','glow'].map(k=>'--'+k+':'+cs.getPropertyValue('--'+k).trim()).join(';');
+tileBg=cs.getPropertyValue('--bg').trim()||'#f4ede2';
+const clone=svg.cloneNode(true);
+clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
+clone.setAttribute('width',r.width);clone.setAttribute('height',r.height);
+clone.removeAttribute('class');
+const st=doc.createElementNS('http://www.w3.org/2000/svg','style');
+st.textContent='svg{'+vars+'}'+TILE_CSS;
+clone.insertBefore(st,clone.firstChild);
+const str=new XMLSerializer().serializeToString(clone);
+const img=new Image();
+img.onload=()=>{tileImg=img;tileRect={x:r.left,y:r.top,w:r.width,h:r.height}};
+img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(str);
+}
+function queueTiles(){clearTimeout(tileTimer);tileTimer=setTimeout(rasterTiles,60)}
+function hookTiles(){
+const doc=tileDoc();if(!doc)return;const svg=doc.getElementById('board');if(!svg)return;
+if(tileObs)tileObs.disconnect();
+tileObs=new MutationObserver(()=>{queueTiles();setTimeout(queueTiles,420)});
+tileObs.observe(svg,{subtree:true,childList:true,attributes:true,attributeFilter:['transform','class','fill','style','viewBox']});
+const sc=doc.getElementById('score');
+if(sc)new MutationObserver(()=>{const n=parseInt(sc.textContent)||0;if(n>lastScore)chime();lastScore=n}).observe(sc,{childList:true,characterData:true,subtree:true});
+queueTiles();
+}
+tf.addEventListener('load',()=>{hookTiles();tf.contentWindow.addEventListener('resize',()=>setTimeout(queueTiles,300))});
+
+/* ---------- source switching ---------- */
+async function setSource(s){
+source=s;document.body.className='src-'+s;
+document.querySelectorAll('#srcRow button').forEach(b=>b.classList.toggle('on',b.dataset.s===s));
+stage.classList.toggle('tall',s==='tiles');
+prevLum.fill(-1);setHint();
+if(s==='tiles'){setTimeout(()=>{try{tf.contentWindow.dispatchEvent(new Event('resize'))}catch(e){}},50);setTimeout(queueTiles,400)}
+if(s!=='camera')stopCam();
+else if(started){try{await startCam()}catch(e){camBlocked()}}
+}
+function camBlocked(){
+$('start').style.display='flex';
+$('startMsg').textContent='Camera blocked. Allow camera access for this site in the browser and tap start again, or switch to Patterns or Tiles above.';
+}
+$('go').onclick=async()=>{
+if(!ac)startAudio();
+if(ac.state==='suspended')await ac.resume();
+started=true;
+if(source==='camera'){try{await startCam()}catch(err){camBlocked();return}}
+$('start').style.display='none';
+if(!last)requestAnimationFrame(loop);
+};
+
+/* ---------- main loop ---------- */
 function hsv(r,g,b){
 r/=255;g/=255;b/=255;const mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn;let h=0;
 if(d){if(mx===r)h=((g-b)/d)%6;else if(mx===g)h=(b-r)/d+2;else h=(r-g)/d+4;h*=60;if(h<0)h+=360}
@@ -130,18 +326,33 @@ return[h,mx?d/mx:0,mx];
 }
 function loop(t){
 requestAnimationFrame(loop);
-if(!ac||v.readyState<2||!v.videoWidth)return;
-const dt=last?Math.min(0.1,(t-last)/1000):0;last=t;
+const dt=last?Math.min(0.1,(t-last)/1000):0;last=t||1;
+if(!ac)return;
 const dpr=window.devicePixelRatio||1;
 const cw=Math.round(scr.clientWidth*dpr),ch=Math.round(scr.clientHeight*dpr);
 if(scr.width!==cw||scr.height!==ch){scr.width=cw;scr.height=ch}
-const [sx,sy,sw,sh]=crop();
-const mirror=facing==='user';
+let ox=0,oy=0,ow=cw,oh=ch;
+if(source==='camera'){
+if(v.readyState<2||!v.videoWidth)return;
+const [sx,sy,sw,sh]=crop();const mirror=facing==='user';
 sctx.save();if(mirror){sctx.translate(cw,0);sctx.scale(-1,1)}
 sctx.drawImage(v,sx,sy,sw,sh,0,0,cw,ch);sctx.restore();
 actx.save();if(mirror){actx.translate(W,0);actx.scale(-1,1)}
 actx.drawImage(v,sx,sy,sw,sh,0,0,W,H);actx.restore();
+}else if(source==='patterns'){
+composePattern(dt);
+sctx.drawImage(patFrame,0,0,cw,ch);
+actx.drawImage(patFrame,0,0,W,H);
+}else{
+sctx.clearRect(0,0,cw,ch);
+if(!tileImg||!tileRect)return;
+actx.fillStyle=tileBg;actx.fillRect(0,0,W,H);
+actx.drawImage(tileImg,0,0,W,H);
+ox=tileRect.x*dpr;oy=tileRect.y*dpr;ow=tileRect.w*dpr;oh=tileRect.h*dpr;
+}
 const d=actx.getImageData(0,0,W,H).data;
+let lo=0,span=1;const tilesSrc=source==='tiles',inv=tilesSrc?!invert:invert;
+if(tilesSrc){let mn=1,mx=0;for(let k=0;k<d.length;k+=16){const m=Math.max(d[k],d[k+1],d[k+2])/255;if(m<mn)mn=m;if(m>mx)mx=m}lo=mn;span=Math.max(0.08,mx-mn)}
 let x0=0,x1=W,step=2;
 if(mode==='sweep'){sweepX=(sweepX+(+spd.value)*dt)%W;x0=Math.floor(sweepX);x1=Math.min(W,x0+2);step=1}
 const now=ac.currentTime;
@@ -159,7 +370,7 @@ if(mode==='motion'){
 level=prevLum[i]<0?0:Math.min(1,Math.abs(lum-prevLum[i])*14);
 prevLum[i]=lum;
 }else{
-const l=invert?1-val:val;
+const nv=Math.min(1,Math.max(0,(val-lo)/span));const l=inv?1-nv:nv;
 level=mode==='sweep'?Math.pow(l,2.2):Math.pow(l,1.6)*(0.45+0.55*s);
 }
 levels[i]=level;
@@ -175,15 +386,15 @@ bars[i].style.boxShadow=level>0.05?'inset 0 -3px 0 #1e6bff':'none';
 $('swatch').style.background=`rgb(${(cr/cn)|0},${(cg/cn)|0},${(cb/cn)|0})`;
 sctx.save();
 if(mode==='sweep'){
-const lx=(sweepX/W)*cw;
-sctx.fillStyle='rgba(30,107,255,0.18)';sctx.fillRect(lx-10*dpr,0,20*dpr,ch);
-sctx.fillStyle='#1e6bff';sctx.fillRect(lx-1.5*dpr,0,3*dpr,ch);
+const lx=ox+(sweepX/W)*ow;
+sctx.fillStyle='rgba(30,107,255,0.18)';sctx.fillRect(lx-10*dpr,oy,20*dpr,oh);
+sctx.fillStyle='#1e6bff';sctx.fillRect(lx-1.5*dpr,oy,3*dpr,oh);
 }
 for(let i=0;i<BANDS;i++){
-const y=i*ch/BANDS;
-if(mode!=='sweep'&&levels[i]>0.03){sctx.fillStyle=`rgba(30,107,255,${Math.min(0.35,levels[i]*0.4)})`;sctx.fillRect(0,y,cw,ch/BANDS)}
-sctx.fillStyle='#ffffff';sctx.fillRect(cw-8*dpr,y,8*dpr,1*dpr);
-sctx.fillStyle='#1e6bff';sctx.fillRect(cw-8*dpr,y+ch/BANDS/2-2*dpr,8*dpr*Math.max(0.15,levels[i]),4*dpr);
+const y=oy+i*oh/BANDS;
+if(mode!=='sweep'&&levels[i]>0.03){sctx.fillStyle=`rgba(30,107,255,${Math.min(0.35,levels[i]*0.4)})`;sctx.fillRect(ox,y,ow,oh/BANDS)}
+sctx.fillStyle='#ffffff';sctx.fillRect(ox+ow-8*dpr,y,8*dpr,1*dpr);
+sctx.fillStyle='#1e6bff';sctx.fillRect(ox+ow-8*dpr,y+oh/BANDS/2-2*dpr,8*dpr*Math.max(0.15,levels[i]),4*dpr);
 }
 sctx.restore();
 }
