@@ -269,6 +269,8 @@ const STYLES = [
 ];
 
 let currentStyle = STYLES[0];
+let ACROSS = null;
+window.setAcross = n => { ACROSS = n; buildBoard(); };
 
 const board = document.getElementById('board');
 const scoreEl = document.getElementById('score');
@@ -719,7 +721,7 @@ function buildBoard() {
   const gt = currentStyle.gridType;
 
   if (gt === 'hex') {
-    COLS = 6; ROWS = 10;
+    COLS = ACROSS ? ACROSS : 6; ROWS = ACROSS ? Math.max(2, Math.round(ACROSS * 10 / 6)) : 10;
     const widthBudget = W / (COLS * Math.sqrt(3) + Math.sqrt(3) / 2);
     const heightBudget = H / (1.5 * ROWS + 0.5);
     TILE_SIZE = Math.min(widthBudget, heightBudget) * 0.98;
@@ -727,7 +729,7 @@ function buildBoard() {
     const totalH = TILE_SIZE * (1.5 * ROWS + 0.5);
     board.setAttribute('viewBox', `${-TILE_SIZE} ${-TILE_SIZE * 0.5} ${totalW + TILE_SIZE} ${totalH + TILE_SIZE}`);
   } else if (gt === 'square') {
-    COLS = 7; ROWS = 12;
+    COLS = ACROSS ? ACROSS : 7; ROWS = ACROSS ? Math.max(2, Math.round(ACROSS * 12 / 7)) : 12;
     const widthBudget = W / COLS;
     const heightBudget = H / ROWS;
     TILE_SIZE = Math.min(widthBudget, heightBudget) * 0.98;
@@ -735,7 +737,7 @@ function buildBoard() {
     board.setAttribute('viewBox', `${-pad} ${-pad} ${totalW + pad * 2} ${totalH + pad * 2}`);
   } else if (gt === 'triangle') {
     // Triangle grid: many small triangles fill the space
-    COLS = 13; ROWS = 14; // triangles are half-columns
+    COLS = ACROSS ? ACROSS * 2 + 1 : 13; ROWS = ACROSS ? Math.max(3, Math.round(ACROSS * 14 / 6)) : 14; // triangles are half-columns
     const h = W / (COLS / 2 + 0.5);
     const v = H / ROWS * (2 / Math.sqrt(3));
     TILE_SIZE = Math.min(h, v) * 0.95;
