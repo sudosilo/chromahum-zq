@@ -112,7 +112,8 @@ footer span{color:var(--blue)}
 </div>
 <div class="panel only-cv" id="cvPanel">
 <p class="edtitle">Infinite <span>canvas</span></p>
-<div class="toggle"><button id="cvDraw" class="on">Draw</button><button id="cvPan">Pan</button><button id="cvUndo">Undo</button><button id="cvClear">Clear</button><button id="cvHome">Home view</button></div>
+<div class="toggle"><button id="cvDraw" class="on">Draw</button><button id="cvPan">Pan</button><button id="cvUndo">Undo</button><button id="cvClear">Clear</button><button id="cvHome">Home view</button><button id="cvVoice">Voice draw</button></div>
+<p class="hint" id="cvVoiceMsg">Voice draw listens to the mic and draws your voice as a line on the canvas. High notes draw high, low notes draw low, louder draws thicker, and silence leaves a gap. It records one pass across the stage and sets the sweep to the same speed, so the sweep plays your voice right back as a synth in real time. Tap Stop voice to end early.</p>
 <div class="colors" id="cvColors"><input type="color" id="cvCol" value="#1e6bff" aria-label="Custom color"></div>
 <div class="row"><label>Brush</label><input type="range" id="cvBrush" min="1" max="40" step="1" value="6"></div>
 <p class="hint">Draw right on the stage above. Two fingers pinch to zoom and drag to pan, so you can zoom way in and draw inside your own drawing. Pan switches one finger from drawing to moving around. Under Motion, Infinite zoom dives into the art forever.</p>
@@ -146,7 +147,7 @@ footer span{color:var(--blue)}
 </div>
 <p class="hint" id="hint"></p>
 </div>
-<footer>ChromaHum <span>v6</span></footer>
+<footer>ChromaHum <span>v7</span></footer>
 <script>
 const BANDS=12,W=96,H=72,PW=640,PH=480;
 const v=document.getElementById('v');
@@ -394,6 +395,52 @@ $('cvPan').onclick=()=>{cvMode='pan';$('cvPan').classList.add('on');$('cvDraw').
 $('cvUndo').onclick=()=>{strokes.pop();saveCanvas()};
 $('cvClear').onclick=()=>{strokes=[];saveCanvas()};
 $('cvHome').onclick=()=>{cam={x:0,y:0,s:1}};
+/* ---------- voice draw ---------- */
+let rec=null;
+function detectPitch(buf,sr){
+let rms=0;for(let i=0;i<buf.length;i++)rms+=buf[i]*buf[i];rms=Math.sqrt(rms/buf.length);
+if(rms<0.012)return[0,rms];
+const n=buf.length,minLag=Math.floor(sr/1000),maxLag=Math.floor(sr/70);
+let best=0,bestLag=0;const c=new Float32Array(maxLag+2);
+for(let lag=minLag;lag<=maxLag;lag++){let sum=0;for(let i=0;i<n-lag;i++)sum+=buf[i]*buf[i+lag];c[lag]=sum;if(sum>best){best=sum;bestLag=lag}}
+let e0=0;for(let i=0;i<n;i++)e0+=buf[i]*buf[i];
+if(!bestLag||best/e0<0.3)return[0,rms];
+const a=c[bestLag-1]||0,b=c[bestLag],d=c[bestLag+1]||0,den=a-2*b+d,shift=den?0.5*(a-d)/den:0;
+return[sr/(bestLag+shift),rms];
+}
+async function startVoice(){
+if(!ac)startAudio();
+if(ac.state==='suspended')await ac.resume();
+started=true;$('start').style.display='none';if(!last)requestAnimationFrame(loop);
+let st;
+try{st=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}})}
+catch(e){$('cvVoiceMsg').textContent='Microphone blocked. Allow the microphone for this site in the browser, then tap Voice draw again.';return}
+const src=ac.createMediaStreamSource(st),an2=ac.createAnalyser();an2.fftSize=2048;src.connect(an2);
+master.gain.setTargetAtTime(0,ac.currentTime,0.03);
+const dur=6;spd.value=Math.round(W/dur);
+sweepX=0;
+rec={st,src,an:an2,buf:new Float32Array(2048),t0:performance.now(),dur,prev:null,hist:[]};
+$('cvVoice').classList.add('on');$('cvVoice').textContent='Stop voice';
+}
+function stopVoice(){
+if(!rec)return;rec.st.getTracks().forEach(t=>t.stop());try{rec.src.disconnect()}catch(e){}
+rec=null;master.gain.setTargetAtTime(+vol.value,ac.currentTime,0.05);sweepX=0;
+$('cvVoice').classList.remove('on');$('cvVoice').textContent='Voice draw';saveCanvas();
+}
+$('cvVoice').onclick=()=>rec?stopVoice():startVoice();
+function voiceTick(){
+const el=(performance.now()-rec.t0)/1000;
+if(el>=rec.dur||source!=='canvas'){stopVoice();return}
+rec.an.getFloatTimeDomainData(rec.buf);
+let[f,rms]=detectPitch(rec.buf,ac.sampleRate);
+if(!f){rec.prev=null;rec.hist=[];return}
+rec.hist.push(f);if(rec.hist.length>3)rec.hist.shift();
+f=[...rec.hist].sort((x,y)=>x-y)[Math.floor(rec.hist.length/2)];
+const fx=20+el/rec.dur*(PW-40),pos=Math.min(1,Math.max(0,Math.log2(f/80)/Math.log2(1000/80))),fy=PH-20-pos*(PH-40);
+const w=(3+Math.min(1,rms*10)*24)/cvScale(),pt=toWorld(fx,fy);
+strokes.push(rec.prev?{c:cvColor,w,p:[rec.prev[0],rec.prev[1],pt[0],pt[1]]}:{c:cvColor,w,p:[pt[0],pt[1]]});
+rec.prev=pt;
+}
 function cvPick(c){cvColor=c;$('cvCol').value=c;document.querySelectorAll('#cvColors button').forEach(b=>b.classList.toggle('on',b.dataset.c===c))}
 $('cvCol').oninput=e=>cvPick(e.target.value);
 
@@ -608,6 +655,7 @@ if(s==='patterns')drawPattern();
 if(s==='mytile')drawMyTiles();
 if(s==='tiles'){setTimeout(()=>{try{tf.contentWindow.dispatchEvent(new Event('resize'))}catch(e){}},50);setTimeout(queueTiles,400)}
 if(s!=='camera')stopCam();
+if(s!=='canvas'&&rec)stopVoice();
 else if(started){try{await startCam()}catch(e){camBlocked()}}
 }
 function camBlocked(){
@@ -649,6 +697,7 @@ if(mode==='motion'||spinOn)composeMove(patBase,pf,dt,'#ffffff',false);else pf.dr
 sctx.drawImage(patFrame,0,0,cw,ch);
 actx.drawImage(patFrame,0,0,W,H);
 }else if(source==='canvas'){
+if(rec)voiceTick();
 renderWorld();
 if(mode==='motion')composeMove(cvBase,cvf,dt,'#ffffff',true);else cvf.drawImage(cvBase,0,0);
 sctx.drawImage(cvFrame,0,0,cw,ch);
