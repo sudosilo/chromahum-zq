@@ -146,7 +146,7 @@ footer span{color:var(--blue)}
 </div>
 <p class="hint" id="hint"></p>
 </div>
-<footer>ChromaHum <span>v5</span></footer>
+<footer>ChromaHum <span>v6</span></footer>
 <script>
 const BANDS=12,W=96,H=72,PW=640,PH=480;
 const v=document.getElementById('v');
@@ -301,7 +301,7 @@ img.src=URL.createObjectURL(f);
 fillPatSelect();drawPattern();
 /* ---------- movement engine ---------- */
 const mvSel=$('mv'),mvSpd=$('mvSpd'),mvAmt=$('mvAmt');
-let moveT=0,dvd={x:0.2,y:0.3,vx:0.23,vy:0.17};const INF_K=3;
+let dvdBox=null,moveT=0,dvd={x:0.2,y:0.3,vx:0.23,vy:0.17};const INF_K=3;
 function moving(){return mvSel.value!=='still'}
 function infScale(){return Math.pow(INF_K,(moveT*0.25)%1)}
 function tiledDraw(c,src,tx,ty,rot,sc){
@@ -315,13 +315,13 @@ function composeMove(src,c,dt,bg,vectorInf){
 if(spinOn)spinA+=dt*0.35;
 moveT+=dt*(+mvSpd.value);
 const a=+mvAmt.value,t=moveT,m=mode==='motion'?mvSel.value:'still',sp=(source==='patterns'||source==='mytile')&&spinOn?spinA:0;
-c.setTransform(1,0,0,1,0,0);c.fillStyle=bg;c.fillRect(0,0,PW,PH);
+c.setTransform(1,0,0,1,0,0);c.fillStyle=bg;c.fillRect(0,0,PW,PH);dvdBox=null;
 if(m==='dvd'){
 const sz=0.22+0.45*a;dvd.x+=dvd.vx*dt*(+mvSpd.value);dvd.y+=dvd.vy*dt*(+mvSpd.value);
 if(dvd.x<0){dvd.x=0;dvd.vx=Math.abs(dvd.vx)}if(dvd.x>1-sz){dvd.x=1-sz;dvd.vx=-Math.abs(dvd.vx)}
 if(dvd.y<0){dvd.y=0;dvd.vy=Math.abs(dvd.vy)}if(dvd.y>1-sz){dvd.y=1-sz;dvd.vy=-Math.abs(dvd.vy)}
 c.save();c.translate((dvd.x+sz/2)*PW,(dvd.y+sz/2)*PH);c.rotate(sp);c.drawImage(src,-sz*PW/2,-sz*PH/2,sz*PW,sz*PH);c.restore();
-c.strokeStyle='#1e6bff';c.lineWidth=3;c.strokeRect(dvd.x*PW,dvd.y*PH,sz*PW,sz*PH);return;
+dvdBox={x:dvd.x,y:dvd.y,s:sz};return;
 }
 if(m==='infinite'){
 if(vectorInf){c.drawImage(src,0,0,PW,PH);return}
@@ -703,6 +703,7 @@ bars[i].style.boxShadow=level>0.05?'inset 0 -3px 0 #1e6bff':'none';
 if(mode==='motion')pxValid=true;else voices.forEach(vc=>{if(vc.pan)vc.pan.pan.setTargetAtTime(0,now,0.1)});
 $('swatch').style.background=`rgb(${(cr/cn)|0},${(cg/cn)|0},${(cb/cn)|0})`;
 sctx.save();
+if(dvdBox&&mode==='motion'&&source!=='camera'){sctx.strokeStyle='#1e6bff';sctx.lineWidth=2*dpr;sctx.strokeRect(ox+dvdBox.x*ow,oy+dvdBox.y*oh,dvdBox.s*ow,dvdBox.s*oh)}
 if(mode==='sweep'){
 const lx=ox+(sweepX/W)*ow;
 sctx.fillStyle='rgba(30,107,255,0.18)';sctx.fillRect(lx-10*dpr,oy,20*dpr,oh);
