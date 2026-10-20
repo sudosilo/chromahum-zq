@@ -115,8 +115,9 @@ footer span{color:var(--blue)}
 <div class="toggle"><button id="cvDraw" class="on">Draw</button><button id="cvPan">Pan</button><button id="cvUndo">Undo</button><button id="cvClear">Clear</button><button id="cvHome">Home view</button><button id="cvVoice">Voice draw</button></div>
 <p class="hint" id="cvVoiceMsg">Voice draw listens to the mic and draws your voice as a line on the canvas. High notes draw high, low notes draw low, louder draws thicker, and silence leaves a gap. It records one pass across the stage and sets the sweep to the same speed, so the sweep plays your voice right back as a synth in real time. Tap Stop voice to end early.</p>
 <div class="colors" id="cvColors"><input type="color" id="cvCol" value="#1e6bff" aria-label="Custom color"></div>
+<div class="row"><label>Backdrop</label><select id="cvBgSel"></select></div>
 <div class="row"><label>Brush</label><input type="range" id="cvBrush" min="1" max="40" step="1" value="6"></div>
-<p class="hint">Draw right on the stage above. Two fingers pinch to zoom and drag to pan, so you can zoom way in and draw inside your own drawing. Pan switches one finger from drawing to moving around. Under Motion, Infinite zoom dives into the art forever.</p>
+<p class="hint">Draw right on the stage above. Two fingers pinch to zoom and drag to pan, so you can zoom way in and draw inside your own drawing. Pan switches one finger from drawing to moving around. Backdrop puts any pattern under your drawing so you can scribble right on top of it, and Draw on it in Patterns sends the current picture here. Under Motion, Infinite zoom dives into the art forever.</p>
 </div>
 <div class="panel">
 <div class="row only-mv"><label>Movement</label><select id="mv"><option value="still">Still</option><option value="circle">Circle</option><option value="wiggle">Wiggle</option><option value="spin">Spin</option><option value="dvd">DVD bounce</option><option value="pulse">Pulse</option><option value="drift">Drift</option><option value="infinite">Infinite zoom</option></select></div>
@@ -143,11 +144,12 @@ footer span{color:var(--blue)}
 <button id="resetView" class="only-tl">Reset view</button>
 <button id="resetCols" class="only-tl">Reset colors</button>
 <button id="upload" class="only-pat">Load picture</button>
+<button id="toCanvas" class="only-pat">Draw on it</button>
 <input type="file" id="file" accept="image/*,.svg">
 </div>
 <p class="hint" id="hint"></p>
 </div>
-<footer>ChromaHum <span>v8</span></footer>
+<footer>ChromaHum <span>v9</span></footer>
 <script>
 const BANDS=12,W=96,H=72,PW=640,PH=480;
 const v=document.getElementById('v');
@@ -288,6 +290,9 @@ function fillPatSelect(){
 patSel.innerHTML='';
 Object.entries(PATTERNS).forEach(([k,p])=>{const o=document.createElement('option');o.value=k;o.textContent=p.name;patSel.appendChild(o)});
 if(uploaded){const o=document.createElement('option');o.value='upload';o.textContent='Your picture';patSel.appendChild(o)}
+const bs=$('cvBgSel'),keep=bs.value||'none';bs.innerHTML='';
+[['none','None']].concat(Object.entries(PATTERNS).map(([k,p])=>[k,p.name])).concat(uploaded?[['upload','Your picture']]:[]).forEach(([k,n])=>{const o=document.createElement('option');o.value=k;o.textContent=n;bs.appendChild(o)});
+bs.value=[...bs.options].some(o=>o.value===keep)?keep:'none';
 }
 function drawPattern(){
 pb.setTransform(1,0,0,1,0,0);pb.fillStyle='#ffffff';pb.fillRect(0,0,PW,PH);
@@ -354,11 +359,12 @@ function cvScale(){return cam.s*(mode==='motion'&&mvSel.value==='infinite'?infSc
 function renderWorld(){
 cvx.setTransform(1,0,0,1,0,0);cvx.fillStyle='#ffffff';cvx.fillRect(0,0,PW,PH);
 const inf=mode==='motion'&&mvSel.value==='infinite',S=cvScale();
-const layers=inf?[-4,-3,-2,-1,0,1,2,3]:[0];
+const layers=inf?[3,2,1,0,-1,-2,-3,-4]:[0];
 cvx.lineCap='round';cvx.lineJoin='round';
 for(const n of layers){
 const k=S*Math.pow(INF_K,n);
 cvx.setTransform(k,0,0,k,PW/2-cam.x*k,PH/2-cam.y*k);
+if(cvBgKey!=='none'&&PW*k>2)cvx.drawImage(cvBgCanvas,-PW/2,-PH/2,PW,PH);
 for(const st of strokes){
 if(st.w*k<0.15)continue;
 cvx.strokeStyle=st.c;cvx.lineWidth=inf?Math.min(st.w,16/k):st.w;cvx.beginPath();
@@ -367,12 +373,26 @@ const q=st.p;cvx.moveTo(q[0],q[1]);if(q.length===2)cvx.lineTo(q[0]+0.01/k,q[1]);
 }
 cvx.setTransform(1,0,0,1,0,0);
 }
+let cvBgKey='none';
+const cvBgCanvas=document.createElement('canvas');cvBgCanvas.width=PW;cvBgCanvas.height=PH;const cbg=cvBgCanvas.getContext('2d');
+function setCvBg(k){
+cvBgKey=k;try{localStorage.setItem('chromahum-v9-backdrop',k)}catch(e){}
+$('cvBgSel').value=k;
+cbg.setTransform(1,0,0,1,0,0);cbg.fillStyle='#ffffff';cbg.fillRect(0,0,PW,PH);
+if(k==='upload'&&uploaded){const s2=Math.min(PW/uploaded.width,PH/uploaded.height),w=uploaded.width*s2,h=uploaded.height*s2;cbg.drawImage(uploaded,(PW-w)/2,(PH-h)/2,w,h)}
+else if(PATTERNS[k])PATTERNS[k].draw(cbg);
+else cvBgKey='none';
+resetMotion();
+}
+$('cvBgSel').onchange=e=>setCvBg(e.target.value);
+$('toCanvas').onclick=()=>{setCvBg(patSel.value);cam={x:0,y:0,s:1};setSource('canvas')};
 function seedCanvas(){
 strokes=[];const spiral=[];for(let a=0;a<Math.PI*10;a+=0.08){const r=4+a*6;spiral.push(Math.cos(a)*r,Math.sin(a)*r)}
 strokes.push({c:'#1e6bff',w:8,p:spiral});
 for(let i=0;i<6;i++){const a=i/6*Math.PI*2,cx=Math.cos(a)*230,cy=Math.sin(a)*150,ring=[];for(let b=0;b<=Math.PI*2+0.1;b+=0.15)ring.push(cx+Math.cos(b)*34,cy+Math.sin(b)*34);strokes.push({c:i%2?'#e53935':'#111111',w:7,p:ring})}
 }
 function saveCanvas(){try{const j=JSON.stringify(strokes);if(j.length<900000)localStorage.setItem('chromahum-v5-canvas',j)}catch(e){}}
+(function loadBackdrop(){let k='none';try{k=localStorage.getItem('chromahum-v9-backdrop')||'none'}catch(e){}if(k==='upload')k='none';fillPatSelect();setCvBg(k)})();
 (function loadCanvas(){let j=null;try{j=localStorage.getItem('chromahum-v5-canvas')}catch(e){}if(j){try{strokes=JSON.parse(j)}catch(e){seedCanvas()}}else seedCanvas()})();
 function toFrame(e){const r=scr.getBoundingClientRect();return[(e.clientX-r.left)/r.width*PW,(e.clientY-r.top)/r.height*PH]}
 function toWorld(fx,fy){const S=cvScale();return[(fx-PW/2)/S+cam.x,(fy-PH/2)/S+cam.y]}
@@ -659,8 +679,8 @@ showAcross();
 if(s==='patterns')drawPattern();
 if(s==='mytile')drawMyTiles();
 if(s==='tiles'){setTimeout(()=>{try{tf.contentWindow.dispatchEvent(new Event('resize'))}catch(e){}},50);setTimeout(queueTiles,400)}
-if(s!=='camera')stopCam();
 if(s!=='canvas'&&rec)stopVoice();
+if(s!=='camera')stopCam();
 else if(started){try{await startCam()}catch(e){camBlocked()}}
 }
 function camBlocked(){
