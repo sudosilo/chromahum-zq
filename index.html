@@ -21,7 +21,7 @@ h1 span{color:var(--blue)}
 .modes{padding-bottom:10px}
 .stage{position:relative;margin:0 16px;border-radius:14px;overflow:hidden;background:#dfe8fa;aspect-ratio:4/3;border:2px solid var(--blue2)}
 .stage.tall{aspect-ratio:auto;height:70vh}
-#v{position:absolute;width:2px;height:2px;opacity:0;pointer-events:none}
+#v{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;pointer-events:none;background:#dfe8fa}
 #tiles{position:absolute;inset:0;width:100%;height:100%;border:0;display:none;background:#f4ede2}
 .stage.tall #tiles{display:block}
 #screen{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none;z-index:2}
@@ -149,7 +149,7 @@ footer span{color:var(--blue)}
 </div>
 <p class="hint" id="hint"></p>
 </div>
-<footer>ChromaHum <span>v9</span></footer>
+<footer>ChromaHum <span>v10</span></footer>
 <script>
 const BANDS=12,W=96,H=72,PW=640,PH=480;
 const v=document.getElementById('v');
@@ -221,8 +221,13 @@ voices.push({osc,filt,g,pan});
 function stopCam(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}}
 async function startCam(){
 stopCam();
-stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:facing},width:{ideal:640},height:{ideal:480}}});
-v.srcObject=stream;await v.play();frozen=false;$('hold').classList.remove('on');
+if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error('nocam');
+try{stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:facing},width:{ideal:640},height:{ideal:480}}})}
+catch(e){if(e&&(e.name==='NotAllowedError'||e.name==='SecurityError'))throw e;stream=await navigator.mediaDevices.getUserMedia({audio:false,video:true})}
+v.setAttribute('playsinline','');v.muted=true;v.srcObject=stream;
+await Promise.race([v.play().catch(()=>{}),new Promise(r=>setTimeout(r,1500))]);
+frozen=false;$('hold').classList.remove('on');
+stream.getVideoTracks().forEach(t=>t.onended=()=>{if(source==='camera'&&started&&!document.hidden)startCam().catch(camBlocked)});
 }
 function crop(){
 const vw=v.videoWidth,vh=v.videoHeight;const target=4/3;
@@ -679,6 +684,7 @@ showAcross();
 if(s==='patterns')drawPattern();
 if(s==='mytile')drawMyTiles();
 if(s==='tiles'){setTimeout(()=>{try{tf.contentWindow.dispatchEvent(new Event('resize'))}catch(e){}},50);setTimeout(queueTiles,400)}
+v.style.display=s==='camera'?'block':'none';
 if(s!=='canvas'&&rec)stopVoice();
 if(s!=='camera')stopCam();
 else if(started){try{await startCam()}catch(e){camBlocked()}}
@@ -687,14 +693,21 @@ function camBlocked(){
 $('start').style.display='flex';
 $('startMsg').textContent='Camera blocked. Allow camera access for this site in the browser and tap start again, or switch to Patterns or Tiles above.';
 }
+function unlockAudio(){
+if(!ac)return;
+if(ac.state!=='running')ac.resume().catch(()=>{});
+try{const b=ac.createBuffer(1,1,ac.sampleRate),s0=ac.createBufferSource();s0.buffer=b;s0.connect(ac.destination);s0.start(0)}catch(e){}
+master.gain.cancelScheduledValues(ac.currentTime);master.gain.setTargetAtTime(rec?0:+vol.value,ac.currentTime,0.08);
+}
 $('go').onclick=async()=>{
 if(!ac)startAudio();
-if(ac.state==='suspended')await ac.resume();
+unlockAudio();
 started=true;
-if(source==='camera'){try{await startCam()}catch(err){camBlocked();return}}
 $('start').style.display='none';
 if(!last)requestAnimationFrame(loop);
+if(source==='camera'){try{await startCam()}catch(err){camBlocked()}}
 };
+document.addEventListener('pointerdown',()=>{if(ac&&started&&ac.state!=='running')unlockAudio()},true);
 
 /* ---------- main loop ---------- */
 function hsv(r,g,b){
@@ -793,7 +806,8 @@ sctx.restore();
 }
 document.addEventListener('visibilitychange',async()=>{if(!ac)return;
 if(document.hidden){master.gain.setTargetAtTime(0,ac.currentTime,0.02);setTimeout(()=>{if(document.hidden)ac.suspend()},120)}
-else{await ac.resume();master.gain.cancelScheduledValues(ac.currentTime);master.gain.setValueAtTime(0,ac.currentTime);master.gain.setTargetAtTime(+vol.value,ac.currentTime+0.05,0.08)}});
+else{ac.resume().catch(()=>{});master.gain.cancelScheduledValues(ac.currentTime);master.gain.setValueAtTime(0,ac.currentTime);master.gain.setTargetAtTime(rec?0:+vol.value,ac.currentTime+0.05,0.08);
+if(source==='camera'&&started&&(!stream||stream.getVideoTracks().every(t=>t.readyState==='ended')))startCam().catch(camBlocked)}});
 </script>
 </body>
 </html>
